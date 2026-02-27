@@ -1,11 +1,13 @@
 use axum::{Router, middleware, routing::{delete, get, post}};
 use sqlx::SqlitePool;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use timeforged_core::config::AppConfig;
 
 use crate::auth;
 use crate::handlers::{events, health, reports, users};
+use crate::web;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -14,6 +16,11 @@ pub struct AppState {
 }
 
 pub fn build_router(state: AppState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let authed = Router::new()
         // Events
         .route("/api/v1/events", post(events::create_event))
@@ -38,6 +45,8 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .merge(authed)
         .merge(public)
+        .fallback(web::static_handler)
+        .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

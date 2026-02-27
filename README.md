@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  Self-hosted time tracking for developers. Daemon + CLI + MCP, written in Rust.
+  Self-hosted time tracking for developers. Daemon + CLI + Web Dashboard + MCP, written in Rust.
 </p>
 
 ---
@@ -16,7 +16,27 @@
 ## Quick Start
 
 ```bash
-# Build
+git clone https://github.com/Blysspeak/timeforged.git
+cd timeforged
+bash install.sh
+```
+
+The installer will:
+- Build the web dashboard (Vue 3 + Tailwind)
+- Compile Rust binaries (`timeforged` daemon + `tf` CLI)
+- Install to `~/.local/bin/`
+- Start the daemon and display your API key
+- Show the dashboard URL
+
+Open **http://127.0.0.1:6175** in your browser — the dashboard works immediately, no login required on localhost.
+
+### Manual build
+
+```bash
+# Build dashboard
+cd crates/timeforged/web && npm install && npx vite build && cd ../../..
+
+# Build binaries
 cargo build --release
 
 # Run daemon
@@ -34,17 +54,30 @@ On first run, an admin user and API key are created automatically:
 ==============================================
 ```
 
+## Web Dashboard
+
+The daemon serves a built-in web dashboard at `http://127.0.0.1:6175`:
+
+- **Activity chart** — time per day (last 7 days)
+- **Projects & Languages** — breakdown with progress bars and language icons
+- **Sessions** — recent coding sessions with duration
+- **Stats** — total time, top project, session count, events
+
+Localhost requests are auto-authenticated — no API key needed to view the dashboard.
+
 ## Architecture
 
 ```
 crates/
   timeforged-core/   # Shared types, models, config
-  timeforged/        # Daemon — Axum REST API + SQLite
+  timeforged/        # Daemon — Axum REST API + SQLite + embedded SPA
+    web/             # Vue 3 + Tailwind CSS dashboard
   tf/                # CLI client
 ```
 
 ```
-HTTP → Auth Middleware (X-Api-Key) → Handler → Service → Storage (SQLite)
+Browser → Embedded SPA (rust-embed)
+HTTP API → CORS → Auth Middleware (X-Api-Key / localhost auto-auth) → Handler → Service → Storage (SQLite)
 ```
 
 ## CLI
@@ -103,7 +136,7 @@ claude mcp add timeforged \
 
 ## REST API
 
-All authenticated endpoints require the `X-Api-Key` header.
+All authenticated endpoints require the `X-Api-Key` header (or localhost access).
 
 | Method | Path | Description |
 |--------|------|-------------|

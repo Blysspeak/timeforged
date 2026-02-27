@@ -3,6 +3,7 @@ mod auth;
 mod handlers;
 mod service;
 mod storage;
+mod web;
 
 use sqlx::sqlite::SqlitePoolOptions;
 use tracing_subscriber::EnvFilter;
@@ -58,7 +59,11 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("TimeForged daemon listening on {bind_addr}");
-    axum::serve(listener, router).await?;
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

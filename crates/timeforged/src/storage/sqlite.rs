@@ -69,6 +69,15 @@ fn parse_user_row(row: &sqlx::sqlite::SqliteRow) -> Result<User, AppError> {
     })
 }
 
+pub async fn get_first_user(pool: &SqlitePool) -> Result<Option<User>, AppError> {
+    let row = sqlx::query("SELECT id, username, display_name, created_at FROM users ORDER BY created_at ASC LIMIT 1")
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    row.map(|r| parse_user_row(&r)).transpose()
+}
+
 // --- API Keys ---
 
 pub async fn create_api_key(
