@@ -1,0 +1,9 @@
+[package]
+name = "timeforged"
+description = "Self-hosted time tracking daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
