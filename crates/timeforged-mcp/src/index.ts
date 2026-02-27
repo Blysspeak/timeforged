@@ -6,6 +6,12 @@ import { z } from "zod";
 const SERVER_URL = process.env.TF_SERVER_URL || "http://127.0.0.1:6175";
 const API_KEY = process.env.TF_API_KEY || "";
 
+if (!API_KEY) {
+  console.error(
+    "Warning: TF_API_KEY not set. Requests will be sent without authentication."
+  );
+}
+
 async function tfFetch(
   path: string,
   options: RequestInit = {}
@@ -80,66 +86,69 @@ server.tool("tf_status", "Check TimeForged daemon status", {}, async () => {
 });
 
 // --- tf_today ---
-server.tool(
-  "tf_today",
-  "Get today's coding time summary",
-  {},
-  async () => {
-    try {
-      const now = new Date();
-      const startOfDay = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate()
-      );
-      const from = startOfDay.toISOString();
-      const to = now.toISOString();
+server.tool("tf_today", "Get today's coding time summary", {}, async () => {
+  try {
+    const now = new Date();
+    const startOfDay = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
+    const from = startOfDay.toISOString();
+    const to = now.toISOString();
 
-      const data = (await tfFetch(
-        `/api/v1/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-      )) as {
+    const data = (await tfFetch(
+      `/api/v1/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    )) as {
+      total_seconds: number;
+      projects: Array<{
+        name: string;
         total_seconds: number;
-        projects: Array<{ name: string; total_seconds: number; percent: number }>;
-        languages: Array<{ name: string; total_seconds: number; percent: number }>;
-      };
+        percent: number;
+      }>;
+      languages: Array<{
+        name: string;
+        total_seconds: number;
+        percent: number;
+      }>;
+    };
 
-      const lines: string[] = [
-        `Today: ${formatSeconds(data.total_seconds)}`,
-      ];
+    const lines: string[] = [`Today: ${formatSeconds(data.total_seconds)}`];
 
-      if (data.projects.length > 0) {
-        lines.push(
-          "",
-          "Projects:",
-          ...data.projects.map(
-            (p) => `  ${p.name}: ${formatSeconds(p.total_seconds)} (${p.percent.toFixed(0)}%)`
-          )
-        );
-      }
-
-      if (data.languages.length > 0) {
-        lines.push(
-          "",
-          "Languages:",
-          ...data.languages.map(
-            (l) => `  ${l.name}: ${formatSeconds(l.total_seconds)} (${l.percent.toFixed(0)}%)`
-          )
-        );
-      }
-
-      return {
-        content: [{ type: "text" as const, text: lines.join("\n") }],
-      };
-    } catch (e) {
-      return {
-        content: [
-          { type: "text" as const, text: `Error: ${(e as Error).message}` },
-        ],
-        isError: true,
-      };
+    if (data.projects.length > 0) {
+      lines.push(
+        "",
+        "Projects:",
+        ...data.projects.map(
+          (p) =>
+            `  ${p.name}: ${formatSeconds(p.total_seconds)} (${p.percent.toFixed(0)}%)`
+        )
+      );
     }
+
+    if (data.languages.length > 0) {
+      lines.push(
+        "",
+        "Languages:",
+        ...data.languages.map(
+          (l) =>
+            `  ${l.name}: ${formatSeconds(l.total_seconds)} (${l.percent.toFixed(0)}%)`
+        )
+      );
+    }
+
+    return {
+      content: [{ type: "text" as const, text: lines.join("\n") }],
+    };
+  } catch (e) {
+    return {
+      content: [
+        { type: "text" as const, text: `Error: ${(e as Error).message}` },
+      ],
+      isError: true,
+    };
   }
-);
+});
 
 // --- tf_report ---
 server.tool(
@@ -172,8 +181,16 @@ server.tool(
         total_seconds: number;
         from: string;
         to: string;
-        projects: Array<{ name: string; total_seconds: number; percent: number }>;
-        languages: Array<{ name: string; total_seconds: number; percent: number }>;
+        projects: Array<{
+          name: string;
+          total_seconds: number;
+          percent: number;
+        }>;
+        languages: Array<{
+          name: string;
+          total_seconds: number;
+          percent: number;
+        }>;
         days: Array<{ date: string; total_seconds: number }>;
       };
 
@@ -187,7 +204,8 @@ server.tool(
           "",
           "Projects:",
           ...data.projects.map(
-            (p) => `  ${p.name}: ${formatSeconds(p.total_seconds)} (${p.percent.toFixed(0)}%)`
+            (p) =>
+              `  ${p.name}: ${formatSeconds(p.total_seconds)} (${p.percent.toFixed(0)}%)`
           )
         );
       }
@@ -197,7 +215,8 @@ server.tool(
           "",
           "Languages:",
           ...data.languages.map(
-            (l) => `  ${l.name}: ${formatSeconds(l.total_seconds)} (${l.percent.toFixed(0)}%)`
+            (l) =>
+              `  ${l.name}: ${formatSeconds(l.total_seconds)} (${l.percent.toFixed(0)}%)`
           )
         );
       }
@@ -319,13 +338,18 @@ server.tool(
         activity,
         ...(project ? { project } : {}),
         ...(language ? { language } : {}),
-        metadata: { source: "claude-code-mcp" },
+        metadata: { source: "mcp" },
       };
 
       const data = (await tfFetch("/api/v1/events", {
         method: "POST",
         body: JSON.stringify(payload),
-      })) as { id: number; timestamp: string; event_type: string; entity: string };
+      })) as {
+        id: number;
+        timestamp: string;
+        event_type: string;
+        entity: string;
+      };
 
       return {
         content: [
