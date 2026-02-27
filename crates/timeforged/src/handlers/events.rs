@@ -12,7 +12,7 @@ pub async fn create_event(
     Json(req): Json<CreateEventRequest>,
 ) -> impl IntoResponse {
     match event_service::create_event(&state.db, user.id, req).await {
-        Ok(resp) => (StatusCode::CREATED, Json(serde_json::to_value(resp).unwrap())).into_response(),
+        Ok(resp) => (StatusCode::CREATED, Json(resp)).into_response(),
         Err(e) => error_response(e),
     }
 }
@@ -23,7 +23,7 @@ pub async fn create_batch(
     Json(req): Json<BatchEventRequest>,
 ) -> impl IntoResponse {
     match event_service::create_batch(&state.db, user.id, req).await {
-        Ok(resp) => (StatusCode::OK, Json(serde_json::to_value(resp).unwrap())).into_response(),
+        Ok(resp) => (StatusCode::OK, Json(resp)).into_response(),
         Err(e) => error_response(e),
     }
 }

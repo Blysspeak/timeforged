@@ -26,12 +26,6 @@ pub async fn create_user(
     sqlite::create_user(pool, username, display_name).await
 }
 
-pub async fn get_user(pool: &SqlitePool, id: Uuid) -> Result<User, AppError> {
-    sqlite::get_user_by_id(pool, id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("user not found".into()))
-}
-
 pub async fn authenticate(pool: &SqlitePool, api_key: &str) -> Result<User, AppError> {
     let hash = hash_api_key(api_key);
     sqlite::find_user_by_api_key_hash(pool, &hash)

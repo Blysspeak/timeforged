@@ -13,7 +13,7 @@ pub async fn summary(
     Query(req): Query<ReportRequest>,
 ) -> impl IntoResponse {
     match report_service::get_summary(&state.db, user.id, &req, state.config.idle_timeout).await {
-        Ok(s) => (StatusCode::OK, Json(serde_json::to_value(s).unwrap())).into_response(),
+        Ok(s) => (StatusCode::OK, Json(s)).into_response(),
         Err(e) => error_response(e),
     }
 }
@@ -24,7 +24,7 @@ pub async fn sessions(
     Query(req): Query<ReportRequest>,
 ) -> impl IntoResponse {
     match report_service::get_sessions(&state.db, user.id, &req, state.config.idle_timeout).await {
-        Ok(s) => (StatusCode::OK, Json(serde_json::to_value(s).unwrap())).into_response(),
+        Ok(s) => (StatusCode::OK, Json(s)).into_response(),
         Err(e) => error_response(e),
     }
 }
@@ -37,7 +37,7 @@ pub async fn activity(
     match report_service::get_hourly_activity(&state.db, user.id, &req, state.config.idle_timeout)
         .await
     {
-        Ok(s) => (StatusCode::OK, Json(serde_json::to_value(s).unwrap())).into_response(),
+        Ok(s) => (StatusCode::OK, Json(s)).into_response(),
         Err(e) => error_response(e),
     }
 }

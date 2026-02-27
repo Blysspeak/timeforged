@@ -45,19 +45,6 @@ pub async fn create_user(
     })
 }
 
-pub async fn get_user_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<User>, AppError> {
-    let row = sqlx::query("SELECT id, username, display_name, created_at FROM users WHERE id = ?")
-        .bind(id.to_string())
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-    match row {
-        Some(row) => Ok(Some(parse_user_row(&row)?)),
-        None => Ok(None),
-    }
-}
-
 pub async fn count_users(pool: &SqlitePool) -> Result<i64, AppError> {
     let row = sqlx::query("SELECT COUNT(*) as cnt FROM users")
         .fetch_one(pool)
@@ -356,8 +343,10 @@ async fn query_category_summary(
         .bind(user_id)
         .bind(from)
         .bind(to);
-    if project_filter.is_some() && column != "project" {
-        q = q.bind(project_filter.unwrap());
+    if let Some(p) = project_filter {
+        if column != "project" {
+            q = q.bind(p);
+        }
     }
     q = q.bind(idle_timeout as f64);
 

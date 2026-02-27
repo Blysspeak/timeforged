@@ -7,13 +7,14 @@ use axum::{
 use uuid::Uuid;
 
 use timeforged_core::api::{CreateApiKeyRequest, ErrorResponse};
+use timeforged_core::models::User;
 
 use crate::app::AppState;
 use crate::auth::AuthUser;
 use crate::service::user_service;
 
-pub async fn me(Extension(AuthUser(user)): Extension<AuthUser>) -> impl IntoResponse {
-    Json(serde_json::to_value(user).unwrap())
+pub async fn me(Extension(AuthUser(user)): Extension<AuthUser>) -> Json<User> {
+    Json(user)
 }
 
 pub async fn create_api_key(
@@ -22,7 +23,7 @@ pub async fn create_api_key(
     Json(req): Json<CreateApiKeyRequest>,
 ) -> impl IntoResponse {
     match user_service::create_api_key(&state.db, user.id, req).await {
-        Ok(resp) => (StatusCode::CREATED, Json(serde_json::to_value(resp).unwrap())).into_response(),
+        Ok(resp) => (StatusCode::CREATED, Json(resp)).into_response(),
         Err(e) => error_response(e),
     }
 }
@@ -32,7 +33,7 @@ pub async fn list_api_keys(
     Extension(AuthUser(user)): Extension<AuthUser>,
 ) -> impl IntoResponse {
     match user_service::list_api_keys(&state.db, user.id).await {
-        Ok(keys) => Json(serde_json::to_value(keys).unwrap()).into_response(),
+        Ok(keys) => Json(keys).into_response(),
         Err(e) => error_response(e),
     }
 }

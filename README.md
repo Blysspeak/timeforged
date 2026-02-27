@@ -1,32 +1,25 @@
-# TimeForged
+<p align="center">
+  <img src="timeforged-logo.png" width="280" alt="TimeForged" />
+</p>
 
-Self-hosted time tracking daemon and CLI, written in Rust.
+<p align="center">
+  <a href="https://github.com/Blysspeak/timeforged/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Blysspeak/timeforged" alt="license" /></a>
+  <a href="https://www.npmjs.com/package/timeforged-mcp"><img src="https://img.shields.io/npm/v/timeforged-mcp?label=MCP" alt="MCP" /></a>
+</p>
 
-## Architecture
+<p align="center">
+  Self-hosted time tracking for developers. Daemon + CLI + MCP, written in Rust.
+</p>
 
-```
-crates/
-  timeforged-core/   # Shared types, models, config, error handling
-  timeforged/        # Daemon — Axum REST API + SQLite storage
-  tf/                # CLI client
-```
-
-**Daemon layers:**
-```
-HTTP → Auth Middleware (X-Api-Key) → Handler → Service → Storage (SQLite)
-```
+---
 
 ## Quick Start
 
-### Build
-
 ```bash
+# Build
 cargo build --release
-```
 
-### Run the daemon
-
-```bash
+# Run daemon
 ./target/release/timeforged
 ```
 
@@ -41,25 +34,71 @@ On first run, an admin user and API key are created automatically:
 ==============================================
 ```
 
-Default bind address: `127.0.0.1:6175`.
+## Architecture
 
-### CLI usage
+```
+crates/
+  timeforged-core/   # Shared types, models, config
+  timeforged/        # Daemon — Axum REST API + SQLite
+  tf/                # CLI client
+```
+
+```
+HTTP → Auth Middleware (X-Api-Key) → Handler → Service → Storage (SQLite)
+```
+
+## CLI
 
 ```bash
 # Check daemon status
-tf --key tf_abc123... status
-
-# Send a heartbeat event
-tf --key tf_abc123... send /path/to/file.rs --project myapp --language Rust
+tf status
 
 # Today's summary
-tf --key tf_abc123... today
+tf today
 
 # Weekly report
-tf --key tf_abc123... report --range week
+tf report --range week
 
-# Report with project filter
-tf --key tf_abc123... report --range month --project myapp
+# Report filtered by project
+tf report --range month --project myapp
+
+# Send a heartbeat
+tf send /path/to/file.rs --project myapp --language Rust
+```
+
+API key is configured once in `~/.config/timeforged/cli.toml` or via `TF_API_KEY`.
+
+## MCP Integration
+
+Connect your AI assistant to TimeForged with the [MCP server](https://github.com/Blysspeak/timeforged-mcp):
+
+```bash
+npx timeforged-mcp
+```
+
+### Claude Code
+
+```bash
+claude mcp add timeforged \
+  --transport stdio \
+  --env TF_API_KEY=your-api-key \
+  -- npx -y timeforged-mcp
+```
+
+### Claude Desktop / Cursor / VS Code
+
+```json
+{
+  "mcpServers": {
+    "timeforged": {
+      "command": "npx",
+      "args": ["-y", "timeforged-mcp"],
+      "env": {
+        "TF_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
 ```
 
 ## REST API
@@ -70,22 +109,19 @@ All authenticated endpoints require the `X-Api-Key` header.
 |--------|------|-------------|
 | GET | `/health` | Health check (no auth) |
 | GET | `/api/v1/status` | Daemon status (no auth) |
-| POST | `/api/v1/events` | Create a single event |
-| POST | `/api/v1/events/batch` | Create up to 100 events |
-| GET | `/api/v1/reports/summary` | Summary: total time, by project/language/day |
-| GET | `/api/v1/reports/sessions` | List of sessions (idle gap = 5 min) |
-| GET | `/api/v1/reports/activity` | Hourly activity breakdown |
-| GET | `/api/v1/me` | Current user info |
-| POST | `/api/v1/api-keys` | Create a new API key |
+| POST | `/api/v1/events` | Create event |
+| POST | `/api/v1/events/batch` | Batch create (up to 100) |
+| GET | `/api/v1/reports/summary` | Time summary by project/language/day |
+| GET | `/api/v1/reports/sessions` | Coding sessions |
+| GET | `/api/v1/reports/activity` | Hourly activity |
+| GET | `/api/v1/me` | Current user |
+| POST | `/api/v1/api-keys` | Create API key |
 | GET | `/api/v1/api-keys` | List API keys |
-| DELETE | `/api/v1/api-keys/{id}` | Delete an API key |
+| DELETE | `/api/v1/api-keys/{id}` | Delete API key |
 
-### Report query parameters
+### Query parameters
 
-- `from` — start date (ISO 8601, e.g. `2026-01-01T00:00:00Z`)
-- `to` — end date
-- `project` — filter by project name
-- `language` — filter by language
+`from`, `to` (ISO 8601), `project`, `language`
 
 ### Event body
 
@@ -93,20 +129,18 @@ All authenticated endpoints require the `X-Api-Key` header.
 {
   "timestamp": "2026-02-27T10:00:00Z",
   "event_type": "file",
-  "entity": "/home/user/projects/app/src/main.rs",
+  "entity": "/home/user/project/src/main.rs",
   "project": "app",
   "language": "Rust",
   "branch": "main",
-  "activity": "coding",
-  "machine": "laptop",
-  "metadata": {}
+  "activity": "coding"
 }
 ```
 
-`event_type`: `file`, `terminal`, `browser`, `meeting`, `custom`
-`activity`: `coding`, `browsing`, `debugging`, `building`, `communicating`, `designing`, `other`
+`event_type`: `file` | `terminal` | `browser` | `meeting` | `custom`
+`activity`: `coding` | `browsing` | `debugging` | `building` | `communicating` | `designing` | `other`
 
-If `project` or `language` are omitted, the daemon infers them from the file path.
+Project and language are auto-inferred from file path when omitted.
 
 ## Configuration
 
@@ -129,10 +163,10 @@ api_key = "tf_..."
 
 ### Environment variables
 
-All settings can be overridden with `TF_` prefixed env vars:
+All settings can be overridden with `TF_` prefix:
 
 `TF_HOST`, `TF_PORT`, `TF_DATABASE_URL`, `TF_IDLE_TIMEOUT`, `TF_LOG_LEVEL`, `TF_SERVER_URL`, `TF_API_KEY`
 
 ## License
 
-MIT
+[MIT](LICENSE)
