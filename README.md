@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="https://github.com/Blysspeak/timeforged/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Blysspeak/timeforged" alt="license" /></a>
-  <a href="https://www.npmjs.com/package/timeforged-mcp"><img src="https://img.shields.io/npm/v/timeforged-mcp?label=MCP" alt="MCP" /></a>
 </p>
 
 <p align="center">
@@ -25,8 +24,15 @@ The installer will:
 - Build the web dashboard (Vue 3 + Tailwind)
 - Compile Rust binaries (`timeforged` daemon + `tf` CLI)
 - Install to `~/.local/bin/`
+- Set up a systemd user service
+- Install the Waybar module (if Waybar is detected)
 - Start the daemon and display your API key
-- Show the dashboard URL
+
+Then initialize tracking:
+
+```bash
+tf init ~/projects    # watch a directory tree
+```
 
 Open **http://127.0.0.1:6175** in your browser — the dashboard works immediately, no login required on localhost.
 
@@ -65,6 +71,38 @@ The daemon serves a built-in web dashboard at `http://127.0.0.1:6175`:
 
 Localhost requests are auto-authenticated — no API key needed to view the dashboard.
 
+## File Watcher
+
+TimeForged automatically tracks your coding activity via filesystem events — no editor plugins needed.
+
+```bash
+tf init ~/projects          # start watching (recursive, inotify-based)
+tf list                     # show watched directories
+tf unwatch ~/projects       # stop watching
+```
+
+The daemon watches registered directories recursively and creates heartbeat events on file changes. Features:
+- **Project detection** — first-level subdirectory of the watched root becomes the project name
+- **Language detection** — inferred from file extension and filename patterns
+- **Git branch** — cached per project (60s TTL)
+- **Debounce** — 30s per file to avoid event spam
+- **Ignored paths** — `.git`, `node_modules`, `target`, `__pycache__`, lock files, binaries
+- **Window tracker** (optional) — polls `hyprctl` / `xdotool` every 15s for active editor file
+
+Watched directories persist in `~/.config/timeforged/watched.toml`.
+
+## Waybar Module
+
+Show today's coding time in your Waybar panel:
+
+```bash
+bash contrib/waybar/install.sh
+```
+
+This installs a custom module that queries the TimeForged API every 60s, displays time as `󱑂 1:25`, and opens the dashboard on click. The tooltip shows per-project breakdown.
+
+The installer is also run automatically by `install.sh` when Waybar is detected.
+
 ## Architecture
 
 ```
@@ -73,65 +111,47 @@ crates/
   timeforged/        # Daemon — Axum REST API + SQLite + embedded SPA
     web/             # Vue 3 + Tailwind CSS dashboard
   tf/                # CLI client
+contrib/
+  waybar/            # Waybar module + installer
 ```
 
 ```
-Browser → Embedded SPA (rust-embed)
-HTTP API → CORS → Auth Middleware (X-Api-Key / localhost auto-auth) → Handler → Service → Storage (SQLite)
+File Watcher (inotify) ──┐
+Window Tracker (optional) ┼──→ Events ──→ Storage (SQLite)
+HTTP API (POST /events) ──┘
+                                            ↓
+Browser → Embedded SPA (rust-embed) ──→ Reports API ──→ Storage
+Waybar module ─────────────────────────→ Reports API
 ```
 
 ## CLI
 
 ```bash
-# Check daemon status
-tf status
+tf init ~/projects              # watch a directory tree
+tf list                         # show watched directories
+tf unwatch ~/projects           # stop watching
 
-# Today's summary
-tf today
-
-# Weekly report
-tf report --range week
-
-# Report filtered by project
+tf status                       # daemon status
+tf today                        # today's summary
+tf report --range week          # weekly report
 tf report --range month --project myapp
 
-# Send a heartbeat
-tf send /path/to/file.rs --project myapp --language Rust
+tf send /path/to/file.rs --project myapp --language Rust  # manual heartbeat
 ```
 
 API key is configured once in `~/.config/timeforged/cli.toml` or via `TF_API_KEY`.
 
-## MCP Integration
-
-Connect your AI assistant to TimeForged with the [MCP server](https://github.com/Blysspeak/timeforged-mcp):
+## Docker
 
 ```bash
-npx timeforged-mcp
+docker compose up -d
 ```
 
-### Claude Code
+Or build manually:
 
 ```bash
-claude mcp add timeforged \
-  --transport stdio \
-  --env TF_API_KEY=your-api-key \
-  -- npx -y timeforged-mcp
-```
-
-### Claude Desktop / Cursor / VS Code
-
-```json
-{
-  "mcpServers": {
-    "timeforged": {
-      "command": "npx",
-      "args": ["-y", "timeforged-mcp"],
-      "env": {
-        "TF_API_KEY": "your-api-key"
-      }
-    }
-  }
-}
+docker build -t timeforged .
+docker run -d -p 6175:6175 -v timeforged-data:/data timeforged
 ```
 
 ## REST API
@@ -151,6 +171,9 @@ All authenticated endpoints require the `X-Api-Key` header (or localhost access)
 | POST | `/api/v1/api-keys` | Create API key |
 | GET | `/api/v1/api-keys` | List API keys |
 | DELETE | `/api/v1/api-keys/{id}` | Delete API key |
+| POST | `/api/v1/watch` | Add watched directory |
+| DELETE | `/api/v1/watch` | Remove watched directory |
+| GET | `/api/v1/watched` | List watched directories |
 
 ### Query parameters
 
@@ -193,6 +216,15 @@ log_level = "info"
 server_url = "http://127.0.0.1:6175"
 api_key = "tf_..."
 ```
+
+### Watched directories — `~/.config/timeforged/watched.toml`
+
+```toml
+[[directories]]
+path = "/home/user/projects"
+```
+
+Managed via `tf init` / `tf unwatch`.
 
 ### Environment variables
 
