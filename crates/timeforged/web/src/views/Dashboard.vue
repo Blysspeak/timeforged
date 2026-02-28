@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { api } from '../api'
 import type { Summary, Session } from '../api'
 import TimeChart from '../components/TimeChart.vue'
@@ -43,7 +43,8 @@ const totalEvents = computed(() => {
 })
 
 async function loadData() {
-  loading.value = true
+  const isInitial = !summary.value
+  if (isInitial) loading.value = true
   error.value = null
   try {
     const now = new Date()
@@ -58,13 +59,22 @@ async function loadData() {
     summary.value = summaryData
     sessions.value = sessionsData.slice(0, 10)
   } catch (e: any) {
-    error.value = e.message || 'Failed to load data'
+    if (isInitial) error.value = e.message || 'Failed to load data'
   } finally {
     loading.value = false
   }
 }
 
-onMounted(loadData)
+let pollTimer: ReturnType<typeof setInterval>
+
+onMounted(() => {
+  loadData()
+  pollTimer = setInterval(loadData, 30_000)
+})
+
+onUnmounted(() => {
+  clearInterval(pollTimer)
+})
 </script>
 
 <template>

@@ -57,6 +57,18 @@ enum Commands {
         #[arg(long, name = "type")]
         event_type: Option<String>,
     },
+    /// Start watching a directory for file changes
+    Init {
+        /// Directory to watch (default: current directory)
+        path: Option<String>,
+    },
+    /// List watched directories
+    List,
+    /// Stop watching a directory
+    Unwatch {
+        /// Directory to stop watching
+        path: String,
+    },
 }
 
 #[tokio::main]
@@ -115,6 +127,14 @@ async fn main() {
                 event_type.as_deref(),
             )
             .await;
+        }
+        Commands::Init { path } => {
+            let dir = path.unwrap_or_else(|| ".".to_string());
+            commands::init::run(&client, &dir).await;
+        }
+        Commands::List => commands::list::run(&client).await,
+        Commands::Unwatch { path } => {
+            commands::unwatch::run(&client, &path).await;
         }
     }
 }

@@ -1,18 +1,21 @@
 use axum::{Router, middleware, routing::{delete, get, post}};
 use sqlx::SqlitePool;
+use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use timeforged_core::config::AppConfig;
 
 use crate::auth;
-use crate::handlers::{events, health, reports, users};
+use crate::handlers::{events, health, reports, users, watcher};
+use crate::watcher::WatcherCommand;
 use crate::web;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: SqlitePool,
     pub config: AppConfig,
+    pub watcher_tx: mpsc::Sender<WatcherCommand>,
 }
 
 pub fn build_router(state: AppState) -> Router {
@@ -33,6 +36,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/me", get(users::me))
         .route("/api/v1/api-keys", post(users::create_api_key).get(users::list_api_keys))
         .route("/api/v1/api-keys/{id}", delete(users::delete_api_key))
+        // Watcher
+        .route("/api/v1/watch", post(watcher::watch).delete(watcher::unwatch))
+        .route("/api/v1/watched", get(watcher::list))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::auth_middleware,

@@ -152,6 +152,63 @@ ok "Health check passed"
 
 rm -f "$DAEMON_LOG"
 
+# ── Install systemd user service (if systemd is available) ──
+if command -v systemctl >/dev/null 2>&1; then
+    header "Setting up systemd user service..."
+
+    SYSTEMD_DIR="$HOME/.config/systemd/user"
+    mkdir -p "$SYSTEMD_DIR"
+    cat > "$SYSTEMD_DIR/timeforged.service" <<EOF
+[Unit]
+Description=TimeForged — self-hosted time tracking daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$INSTALL_DIR/timeforged
+Restart=on-failure
+RestartSec=5
+Environment=TF_LOG_LEVEL=info
+
+[Install]
+WantedBy=default.target
+EOF
+
+    # Stop the daemon we started manually — systemd will manage it now
+    kill "$DAEMON_PID" 2>/dev/null || true
+    sleep 1
+
+    systemctl --user daemon-reload
+    systemctl --user enable timeforged.service
+    systemctl --user start timeforged.service
+    sleep 2
+
+    if systemctl --user is-active --quiet timeforged.service; then
+        ok "Systemd service installed and running"
+        DAEMON_PID=$(systemctl --user show timeforged.service -p MainPID --value)
+        USE_SYSTEMD=true
+    else
+        info "Systemd service created but failed to start, running manually"
+        "$INSTALL_DIR/timeforged" > /dev/null 2>&1 &
+        DAEMON_PID=$!
+        sleep 2
+        USE_SYSTEMD=false
+    fi
+else
+    USE_SYSTEMD=false
+fi
+
+# ── Install Waybar module (if waybar is present) ──
+if command -v waybar >/dev/null 2>&1; then
+    header "Installing Waybar module..."
+    WAYBAR_SCRIPT="$PROJECT_DIR/contrib/waybar/install.sh"
+    if [[ -f "$WAYBAR_SCRIPT" ]]; then
+        bash "$WAYBAR_SCRIPT"
+    else
+        info "Waybar installer not found, skipping"
+    fi
+fi
+
 # ── Summary ──
 echo ""
 echo -e "${BOLD}${ORANGE}  ╔══════════════════════════════════════╗${RESET}"
@@ -168,14 +225,30 @@ echo -e "  ${DIM}(saved to ~/.config/timeforged/cli.toml)${RESET}"
 echo ""
 fi
 
-echo -e "  ${BOLD}Commands:${RESET}"
-echo -e "    ${DIM}tf status${RESET}      — check daemon status"
-echo -e "    ${DIM}tf today${RESET}       — today's summary"
-echo -e "    ${DIM}tf report${RESET}      — detailed report"
+echo -e "  ${BOLD}Quick start:${RESET}"
+echo -e "    ${GREEN}tf init ~/projects${RESET}  — start tracking a directory"
+echo -e "    ${DIM}tf today${RESET}            — today's summary"
+echo -e "    ${DIM}tf list${RESET}             — show watched directories"
 echo ""
-echo -e "  ${BOLD}Manage daemon:${RESET}"
-echo -e "    ${DIM}timeforged${RESET}     — start daemon (foreground)"
-echo -e "    ${DIM}kill $DAEMON_PID${RESET}      — stop current daemon"
+echo -e "  ${BOLD}All commands:${RESET}"
+echo -e "    ${DIM}tf init [path]${RESET}      — watch directory (default: cwd)"
+echo -e "    ${DIM}tf unwatch <path>${RESET}   — stop watching"
+echo -e "    ${DIM}tf status${RESET}           — daemon status"
+echo -e "    ${DIM}tf today${RESET}            — today's summary"
+echo -e "    ${DIM}tf report${RESET}           — detailed report"
+echo -e "    ${DIM}tf send <file>${RESET}      — manual heartbeat"
+echo ""
+
+if [[ "$USE_SYSTEMD" == "true" ]]; then
+echo -e "  ${BOLD}Daemon (systemd):${RESET}"
+echo -e "    ${DIM}systemctl --user status timeforged${RESET}"
+echo -e "    ${DIM}systemctl --user restart timeforged${RESET}"
+echo -e "    ${DIM}journalctl --user -u timeforged -f${RESET}"
+else
+echo -e "  ${BOLD}Daemon:${RESET}"
+echo -e "    ${DIM}timeforged${RESET}          — start (foreground)"
+echo -e "    ${DIM}kill $DAEMON_PID${RESET}           — stop current"
+fi
 echo ""
 echo -e "  ${DIM}Open ${GREEN}http://127.0.0.1:6175${RESET}${DIM} in your browser${RESET}"
 echo ""

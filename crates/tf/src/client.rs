@@ -58,6 +58,19 @@ impl TfClient {
         handle_response(resp).await
     }
 
+    pub async fn delete_with_body<T: DeserializeOwned, B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T, String> {
+        let mut req = self.http.delete(self.url(path)).json(body);
+        if let Some(ref key) = self.api_key {
+            req = req.header("X-Api-Key", key);
+        }
+        let resp = req.send().await.map_err(|e| format!("request failed: {e}"))?;
+        handle_response(resp).await
+    }
+
     pub async fn health(&self) -> Result<timeforged_core::api::HealthResponse, String> {
         self.get("/health").await
     }

@@ -57,6 +57,34 @@ pub struct CreateApiKeyResponse {
     pub key: String,
 }
 
+// --- Watcher requests ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnwatchRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchedDirResponse {
+    pub path: String,
+    pub added_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchedResponse {
+    pub dirs: Vec<WatchedDirResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchActionResponse {
+    pub message: String,
+}
+
 // --- Generic responses ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

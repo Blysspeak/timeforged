@@ -69,6 +69,12 @@ pub async fn delete_api_key(
     Ok(())
 }
 
+pub async fn get_first_user(pool: &SqlitePool) -> Result<User, AppError> {
+    sqlite::get_first_user(pool)
+        .await?
+        .ok_or(AppError::NotFound("no users".into()))
+}
+
 pub async fn ensure_admin(pool: &SqlitePool) -> Result<Option<String>, AppError> {
     let count = sqlite::count_users(pool).await?;
     if count > 0 {

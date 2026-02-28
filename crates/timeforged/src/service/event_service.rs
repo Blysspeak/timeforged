@@ -4,6 +4,7 @@ use uuid::Uuid;
 use timeforged_core::api::{BatchEventRequest, BatchEventResponse, CreateEventRequest, EventResponse};
 use timeforged_core::error::AppError;
 use timeforged_core::models::Event;
+use timeforged_core::util::infer_language_from_path;
 
 use crate::storage::sqlite;
 
@@ -113,70 +114,3 @@ fn infer_project_from_path(entity: &str) -> Option<String> {
     None
 }
 
-fn infer_language_from_path(entity: &str) -> Option<String> {
-    let path = std::path::Path::new(entity);
-
-    // Check filename first (for dotfiles and extensionless files)
-    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-        let lang = match name {
-            ".gitignore" | ".gitattributes" | ".gitmodules" => "Git Config",
-            "Dockerfile" | "Containerfile" => "Docker",
-            "Makefile" | "GNUmakefile" => "Makefile",
-            "Justfile" | "justfile" => "Just",
-            ".env" | ".env.local" | ".env.production" => "Env",
-            "Cargo.toml" | "Cargo.lock" => "TOML",
-            "package.json" | "tsconfig.json" => "JSON",
-            _ => "",
-        };
-        if !lang.is_empty() {
-            return Some(lang.to_string());
-        }
-    }
-
-    let ext = path.extension()?.to_str()?;
-    let lang = match ext {
-        "rs" => "Rust",
-        "py" => "Python",
-        "js" => "JavaScript",
-        "ts" => "TypeScript",
-        "tsx" => "TypeScript",
-        "jsx" => "JavaScript",
-        "go" => "Go",
-        "java" => "Java",
-        "kt" => "Kotlin",
-        "rb" => "Ruby",
-        "c" | "h" => "C",
-        "cpp" | "cc" | "cxx" | "hpp" => "C++",
-        "cs" => "C#",
-        "swift" => "Swift",
-        "php" => "PHP",
-        "lua" => "Lua",
-        "zig" => "Zig",
-        "vue" => "Vue",
-        "svelte" => "Svelte",
-        "html" | "htm" => "HTML",
-        "css" | "scss" | "sass" | "less" => "CSS",
-        "sql" => "SQL",
-        "sh" | "bash" | "zsh" => "Shell",
-        "toml" => "TOML",
-        "yaml" | "yml" => "YAML",
-        "json" | "jsonc" => "JSON",
-        "md" | "markdown" => "Markdown",
-        "xml" | "svg" => "XML",
-        "graphql" | "gql" => "GraphQL",
-        "proto" => "Protobuf",
-        "dockerfile" => "Docker",
-        "tf" | "hcl" => "Terraform",
-        "r" => "R",
-        "dart" => "Dart",
-        "scala" => "Scala",
-        "ex" | "exs" => "Elixir",
-        "hs" => "Haskell",
-        "ml" | "mli" => "OCaml",
-        "nix" => "Nix",
-        "vim" => "Vim Script",
-        "el" => "Emacs Lisp",
-        _ => return None,
-    };
-    Some(lang.to_string())
-}

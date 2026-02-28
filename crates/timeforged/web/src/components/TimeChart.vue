@@ -57,7 +57,7 @@ const chartOptions = {
       borderWidth: 1,
       titleColor: '#f0f0f3',
       bodyColor: '#8b8b9e',
-      titleFont: { family: "'JetBrains Mono'", size: 12, weight: '600' as const },
+      titleFont: { family: "'JetBrains Mono'", size: 12, weight: 600 },
       bodyFont: { family: "'DM Sans'", size: 12 },
       padding: { x: 12, y: 8 },
       cornerRadius: 8,
