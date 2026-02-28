@@ -114,7 +114,26 @@ fn infer_project_from_path(entity: &str) -> Option<String> {
 }
 
 fn infer_language_from_path(entity: &str) -> Option<String> {
-    let ext = std::path::Path::new(entity).extension()?.to_str()?;
+    let path = std::path::Path::new(entity);
+
+    // Check filename first (for dotfiles and extensionless files)
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        let lang = match name {
+            ".gitignore" | ".gitattributes" | ".gitmodules" => "Git Config",
+            "Dockerfile" | "Containerfile" => "Docker",
+            "Makefile" | "GNUmakefile" => "Makefile",
+            "Justfile" | "justfile" => "Just",
+            ".env" | ".env.local" | ".env.production" => "Env",
+            "Cargo.toml" | "Cargo.lock" => "TOML",
+            "package.json" | "tsconfig.json" => "JSON",
+            _ => "",
+        };
+        if !lang.is_empty() {
+            return Some(lang.to_string());
+        }
+    }
+
+    let ext = path.extension()?.to_str()?;
     let lang = match ext {
         "rs" => "Rust",
         "py" => "Python",
@@ -133,14 +152,24 @@ fn infer_language_from_path(entity: &str) -> Option<String> {
         "php" => "PHP",
         "lua" => "Lua",
         "zig" => "Zig",
-        "html" => "HTML",
-        "css" | "scss" | "sass" => "CSS",
+        "vue" => "Vue",
+        "svelte" => "Svelte",
+        "html" | "htm" => "HTML",
+        "css" | "scss" | "sass" | "less" => "CSS",
         "sql" => "SQL",
         "sh" | "bash" | "zsh" => "Shell",
         "toml" => "TOML",
         "yaml" | "yml" => "YAML",
-        "json" => "JSON",
+        "json" | "jsonc" => "JSON",
         "md" | "markdown" => "Markdown",
+        "xml" | "svg" => "XML",
+        "graphql" | "gql" => "GraphQL",
+        "proto" => "Protobuf",
+        "dockerfile" => "Docker",
+        "tf" | "hcl" => "Terraform",
+        "r" => "R",
+        "dart" => "Dart",
+        "scala" => "Scala",
         "ex" | "exs" => "Elixir",
         "hs" => "Haskell",
         "ml" | "mli" => "OCaml",
