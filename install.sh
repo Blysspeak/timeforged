@@ -87,8 +87,8 @@ INSTALL_DIR="$HOME/.local/bin"
 header "Installing binaries..."
 
 mkdir -p "$INSTALL_DIR"
-cp "$DAEMON_BIN" "$INSTALL_DIR/timeforged"
-cp "$CLI_BIN" "$INSTALL_DIR/tf"
+/usr/bin/cp "$DAEMON_BIN" "$INSTALL_DIR/timeforged"
+/usr/bin/cp "$CLI_BIN" "$INSTALL_DIR/tf"
 ok "Installed to $INSTALL_DIR/"
 
 # Check PATH
@@ -196,6 +196,52 @@ EOF
     fi
 else
     USE_SYSTEMD=false
+fi
+
+# ── Install Waybar module (if waybar is present) ──
+# ── Configure Claude Code hooks (optional) ──
+CLAUDE_DIR="$HOME/.claude"
+if [[ -d "$CLAUDE_DIR" ]]; then
+    echo ""
+    echo -e "${BOLD}Claude Code detected.${RESET}"
+    echo -e "  TimeForged can install hooks to automatically track your Claude Code sessions."
+    echo -e "  This sends a heartbeat on every prompt, tool use, and session end."
+    echo ""
+    read -rp "$(echo -e "${ORANGE}▸${RESET} Install Claude Code hooks? [Y/n] ")" INSTALL_CLAUDE_HOOKS
+    INSTALL_CLAUDE_HOOKS="${INSTALL_CLAUDE_HOOKS:-Y}"
+
+    if [[ "$INSTALL_CLAUDE_HOOKS" =~ ^[Yy]$ ]]; then
+        header "Configuring Claude Code integration..."
+
+        # Install hook script
+        mkdir -p "$CLAUDE_DIR/hooks"
+        /usr/bin/cp "$PROJECT_DIR/contrib/claude-code/timeforged-heartbeat.sh" "$CLAUDE_DIR/hooks/timeforged-heartbeat.sh"
+        chmod +x "$CLAUDE_DIR/hooks/timeforged-heartbeat.sh"
+        ok "Hook script installed"
+
+        # Merge hooks into settings.json
+        CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
+        HOOK_CMD="$CLAUDE_DIR/hooks/timeforged-heartbeat.sh"
+        HOOK_CONFIG=$(jq -n --arg cmd "$HOOK_CMD" '{
+          hooks: {
+            UserPromptSubmit: [{ matcher: "", hooks: [{ type: "command", command: $cmd, timeout: 5 }] }],
+            PostToolUse:      [{ matcher: "", hooks: [{ type: "command", command: $cmd, timeout: 5 }] }],
+            Stop:             [{ matcher: "", hooks: [{ type: "command", command: $cmd, timeout: 5 }] }]
+          }
+        }')
+
+        if [[ -f "$CLAUDE_SETTINGS" ]]; then
+            # Merge: add hooks to existing config (won't overwrite other settings)
+            TMP=$(mktemp)
+            jq --argjson hooks "$(echo "$HOOK_CONFIG" | jq '.hooks')" '.hooks = (.hooks // {}) * $hooks' "$CLAUDE_SETTINGS" > "$TMP"
+            mv "$TMP" "$CLAUDE_SETTINGS"
+        else
+            echo "$HOOK_CONFIG" > "$CLAUDE_SETTINGS"
+        fi
+        ok "Claude Code hooks configured"
+    else
+        info "Skipping Claude Code hooks"
+    fi
 fi
 
 # ── Install Waybar module (if waybar is present) ──
