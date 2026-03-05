@@ -173,7 +173,7 @@ const LOGO_PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAIGNI
 /// Inline SVG logo using the real TimeForged PNG
 fn logo_svg(x: i32, y: i32, size: i32) -> String {
     format!(
-        r#"  <image x="{x}" y="{y}" width="{size}" height="{size}" href="data:image/png;base64,{LOGO_PNG_B64}"/>
+        r#"  <image x="{x}" y="{y}" width="{size}" height="{size}" xlink:href="data:image/png;base64,{LOGO_PNG_B64}" href="data:image/png;base64,{LOGO_PNG_B64}"/>
 "#
     )
 }
@@ -304,7 +304,7 @@ pub fn render_svg(summary: &Summary, theme: Theme) -> String {
 
     // === Card background ===
     svg.push_str(&format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" fill="none">
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{width}" height="{height}" viewBox="0 0 {width} {height}" fill="none">
   <rect x="0.5" y="0.5" width="{}" height="{}" rx="6" fill="{}" stroke="{}"/>
 "#,
         width - 1,
