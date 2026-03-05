@@ -1,6 +1,7 @@
 mod app;
 mod auth;
 mod handlers;
+mod rate_limit;
 mod service;
 mod storage;
 mod watcher;

@@ -1,11 +1,10 @@
 use axum::{
-    extract::{ConnectInfo, Path, Query, State},
+    extract::{Path, Query, State},
     http::{StatusCode, header},
     response::IntoResponse,
 };
 use chrono::Utc;
 use serde::Deserialize;
-use std::net::SocketAddr;
 
 use timeforged_core::models::ReportRequest;
 
@@ -31,10 +30,9 @@ fn default_days() -> u32 {
 }
 
 /// Private card: GET /api/v1/card.svg?key=...
-/// Used locally or with API key auth.
+/// Always requires API key.
 pub async fn card_svg(
     State(state): State<AppState>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<CardQuery>,
 ) -> impl IntoResponse {
     let user = match params.key {
@@ -42,16 +40,7 @@ pub async fn card_svg(
             Ok(u) => u,
             Err(_) => return (StatusCode::UNAUTHORIZED, "invalid api key").into_response(),
         },
-        None => {
-            if addr.ip().is_loopback() {
-                match sqlite::get_first_user(&state.db).await {
-                    Ok(Some(u)) => u,
-                    _ => return (StatusCode::UNAUTHORIZED, "no user found").into_response(),
-                }
-            } else {
-                return (StatusCode::UNAUTHORIZED, "api key required").into_response();
-            }
-        }
+        None => return (StatusCode::UNAUTHORIZED, "api key required").into_response(),
     };
 
     render_card(&state, user.id, &params.theme, params.days).await
@@ -67,25 +56,19 @@ pub struct PublicCardQuery {
 
 /// Public card: GET /api/v1/card/:username.svg
 /// Only works if user has public_profile enabled.
+/// Returns 404 for both non-existent and private users (prevents enumeration).
 pub async fn public_card_svg(
     State(state): State<AppState>,
     Path(username_svg): Path<String>,
     Query(params): Query<PublicCardQuery>,
 ) -> impl IntoResponse {
-    // Strip .svg extension
     let username = username_svg.strip_suffix(".svg").unwrap_or(&username_svg);
 
     let user = match sqlite::get_user_by_username(&state.db, username).await {
-        Ok(Some(u)) => u,
-        Ok(None) => return (StatusCode::NOT_FOUND, "user not found").into_response(),
-        Err(_) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response()
-        }
+        Ok(Some(u)) if u.public_profile => u,
+        // Same 404 for non-existent, private, or DB error — prevents user enumeration
+        _ => return (StatusCode::NOT_FOUND, "not found").into_response(),
     };
-
-    if !user.public_profile {
-        return (StatusCode::FORBIDDEN, "profile is private").into_response();
-    }
 
     render_card(&state, user.id, &params.theme, params.days).await
 }

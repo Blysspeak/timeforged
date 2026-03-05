@@ -1,13 +1,15 @@
 use axum::{Router, middleware, routing::{delete, get, post, put}};
+use axum::http::{HeaderValue, Method};
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 use timeforged_core::config::AppConfig;
 
 use crate::auth;
 use crate::handlers::{card, events, health, register, reports, users, watcher};
+use crate::rate_limit;
 use crate::watcher::WatcherCommand;
 use crate::web;
 
@@ -20,9 +22,16 @@ pub struct AppState {
 
 pub fn build_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin([
+            "https://blysspeak.space".parse::<HeaderValue>().unwrap(),
+            "http://127.0.0.1:6175".parse::<HeaderValue>().unwrap(),
+            "http://localhost:6175".parse::<HeaderValue>().unwrap(),
+        ])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::HeaderName::from_static("x-api-key"),
+        ]);
 
     let authed = Router::new()
         // Events
@@ -50,7 +59,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/status", get(health::status))
         .route("/api/v1/card.svg", get(card::card_svg))
         .route("/api/v1/card/{username}", get(card::public_card_svg))
-        .route("/api/v1/register", post(register::register));
+        .route(
+            "/api/v1/register",
+            post(register::register)
+                .layer(middleware::from_fn(rate_limit::register_rate_limit)),
+        );
 
     Router::new()
         .merge(authed)

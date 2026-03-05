@@ -123,14 +123,14 @@ impl Theme {
 
     fn heat_levels(&self) -> [&str; 4] {
         match self {
-            Self::Dark => ["#4a2a0a", "#7c4a15", "#c46d1a", "#e8913a"],
+            Self::Dark => ["#4a2a0a", "#7c4a15", "#c46d1a", "#ef973e"],
             Self::Light => ["#fde5c8", "#f5c78e", "#e8a04e", "#d97b16"],
         }
     }
 
     fn accent(&self) -> &str {
         match self {
-            Self::Dark => "#e8913a",
+            Self::Dark => "#ef973e",
             Self::Light => "#c46d1a",
         }
     }
@@ -321,7 +321,7 @@ pub fn render_svg(summary: &Summary, theme: Theme) -> String {
 "#,
         pad_x + logo_size + 6,
         header_y + 9,
-        theme.text(),
+        theme.accent(),
     ));
 
     // Total time badge on right

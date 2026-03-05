@@ -41,6 +41,9 @@ pub async fn create_api_key(
     if req.label.is_empty() {
         return Err(AppError::Validation("label cannot be empty".into()));
     }
+    if req.label.len() > 128 {
+        return Err(AppError::Validation("label must be at most 128 characters".into()));
+    }
 
     let raw_key = generate_api_key();
     let hash = hash_api_key(&raw_key);

@@ -34,6 +34,19 @@ pub async fn register(
             .into_response();
     }
 
+    // Validate display_name length
+    if let Some(ref name) = req.display_name {
+        if name.len() > 128 {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "display name must be at most 128 characters".into(),
+                }),
+            )
+                .into_response();
+        }
+    }
+
     let user = match user_service::create_user(
         &state.db,
         &req.username,
@@ -43,10 +56,11 @@ pub async fn register(
     {
         Ok(u) => u,
         Err(_) => {
+            // Generic error to prevent username enumeration
             return (
                 StatusCode::CONFLICT,
                 Json(ErrorResponse {
-                    error: "username already taken".into(),
+                    error: "registration failed".into(),
                 }),
             )
                 .into_response()
