@@ -103,6 +103,36 @@ This installs a custom module that queries the TimeForged API every 60s, display
 
 The installer is also run automatically by `install.sh` when Waybar is detected.
 
+## Claude Code Integration
+
+TimeForged can automatically track your AI-assisted coding sessions via [Claude Code](https://docs.anthropic.com/en/docs/claude-code) hooks.
+
+```bash
+bash install.sh   # choose "yes" when prompted for Claude Code hooks
+```
+
+Or install manually:
+
+```bash
+mkdir -p ~/.claude/hooks
+cp contrib/claude-code/timeforged-heartbeat.sh ~/.claude/hooks/
+chmod +x ~/.claude/hooks/timeforged-heartbeat.sh
+```
+
+Then add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "type": "command", "command": "~/.claude/hooks/timeforged-heartbeat.sh" }],
+    "PostToolUse": [{ "type": "command", "command": "~/.claude/hooks/timeforged-heartbeat.sh" }],
+    "Stop": [{ "type": "command", "command": "~/.claude/hooks/timeforged-heartbeat.sh" }]
+  }
+}
+```
+
+The hook fires on every interaction with 30s debounce, sends heartbeats in the background (non-blocking), and auto-detects project, language, branch, and file paths from hook context.
+
 ## Architecture
 
 ```
@@ -113,11 +143,13 @@ crates/
   tf/                # CLI client
 contrib/
   waybar/            # Waybar module + installer
+  claude-code/       # Claude Code heartbeat hook
 ```
 
 ```
 File Watcher (inotify) ──┐
 Window Tracker (optional) ┼──→ Events ──→ Storage (SQLite)
+Claude Code (hooks) ──────┤
 HTTP API (POST /events) ──┘
                                             ↓
 Browser → Embedded SPA (rust-embed) ──→ Reports API ──→ Storage
