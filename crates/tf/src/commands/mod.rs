@@ -1,7 +1,10 @@
 pub mod init;
 pub mod list;
+pub mod profile;
+pub mod register;
 pub mod report;
 pub mod send;
 pub mod status;
+pub mod sync;
 pub mod today;
 pub mod unwatch;

@@ -69,6 +69,25 @@ enum Commands {
         /// Directory to stop watching
         path: String,
     },
+    /// Set public profile visibility (enables card by username)
+    Profile {
+        /// Enable or disable public profile
+        #[arg(long)]
+        public: bool,
+    },
+    /// Sync local events to remote server
+    Sync,
+    /// Register on a remote TimeForged server
+    Register {
+        /// Username
+        username: String,
+        /// Display name
+        #[arg(long)]
+        display_name: Option<String>,
+        /// Remote server URL (overrides config)
+        #[arg(long)]
+        remote: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -135,6 +154,43 @@ async fn main() {
         Commands::List => commands::list::run(&client).await,
         Commands::Unwatch { path } => {
             commands::unwatch::run(&client, &path).await;
+        }
+        Commands::Profile { public } => {
+            commands::profile::run(&client, public).await;
+        }
+        Commands::Sync => {
+            let remote_url = config.remote_url.clone().unwrap_or_else(|| {
+                eprintln!("No remote URL configured. Set remote_url in ~/.config/timeforged/cli.toml or TF_REMOTE_URL env var.");
+                std::process::exit(1);
+            });
+            let remote_config = CliConfig {
+                server_url: remote_url,
+                api_key: config.remote_key.clone(),
+                remote_url: None,
+                remote_key: None,
+            };
+            let remote = TfClient::new(&remote_config);
+            commands::sync::run(&client, &remote).await;
+        }
+        Commands::Register {
+            username,
+            display_name,
+            remote,
+        } => {
+            let remote_url = remote
+                .or_else(|| config.remote_url.clone())
+                .unwrap_or_else(|| {
+                    eprintln!("No remote URL. Use --remote <url> or set remote_url in ~/.config/timeforged/cli.toml");
+                    std::process::exit(1);
+                });
+            let remote_config = CliConfig {
+                server_url: remote_url,
+                api_key: None,
+                remote_url: None,
+                remote_key: None,
+            };
+            let remote_client = TfClient::new(&remote_config);
+            commands::register::run(&remote_client, &username, display_name.as_deref()).await;
         }
     }
 }

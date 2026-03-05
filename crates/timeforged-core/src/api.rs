@@ -85,6 +85,51 @@ pub struct WatchActionResponse {
     pub message: String,
 }
 
+// --- Registration ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterRequest {
+    pub username: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterResponse {
+    pub username: String,
+    pub api_key: String,
+}
+
+// --- Events export ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportEventsQuery {
+    #[serde(default)]
+    pub since: Option<DateTime<Utc>>,
+    #[serde(default = "default_export_limit")]
+    pub limit: i64,
+}
+
+fn default_export_limit() -> i64 {
+    1000
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportEventsResponse {
+    pub events: Vec<crate::models::Event>,
+    pub count: usize,
+}
+
+// --- Sync ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncStateFile {
+    #[serde(default)]
+    pub last_synced: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub events_synced: u64,
+}
+
 // --- Generic responses ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -13,6 +13,10 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), AppError> {
         .execute(pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
+    sqlx::raw_sql(include_str!("migrations/002_public_profile.sql"))
+        .execute(pool)
+        .await
+        .ok(); // ignore if column already exists
     Ok(())
 }
 
@@ -41,6 +45,7 @@ pub async fn create_user(
         id,
         username: username.to_string(),
         display_name: display_name.map(String::from),
+        public_profile: false,
         created_at: now,
     })
 }
@@ -61,10 +66,13 @@ fn parse_user_row(row: &sqlx::sqlite::SqliteRow) -> Result<User, AppError> {
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+    let public_profile: i32 = row.try_get("public_profile").unwrap_or(0);
+
     Ok(User {
         id,
         username: row.get("username"),
         display_name: row.get("display_name"),
+        public_profile: public_profile != 0,
         created_at,
     })
 }
@@ -76,6 +84,26 @@ pub async fn get_first_user(pool: &SqlitePool) -> Result<Option<User>, AppError>
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     row.map(|r| parse_user_row(&r)).transpose()
+}
+
+pub async fn get_user_by_username(pool: &SqlitePool, username: &str) -> Result<Option<User>, AppError> {
+    let row = sqlx::query("SELECT id, username, display_name, public_profile, created_at FROM users WHERE username = ?")
+        .bind(username)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    row.map(|r| parse_user_row(&r)).transpose()
+}
+
+pub async fn set_public_profile(pool: &SqlitePool, user_id: Uuid, public: bool) -> Result<(), AppError> {
+    sqlx::query("UPDATE users SET public_profile = ? WHERE id = ?")
+        .bind(public as i32)
+        .bind(user_id.to_string())
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    Ok(())
 }
 
 // --- API Keys ---
@@ -219,6 +247,56 @@ pub async fn count_events(pool: &SqlitePool) -> Result<i64, AppError> {
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
     Ok(row.get::<i64, _>("cnt"))
+}
+
+pub async fn list_events(
+    pool: &SqlitePool,
+    user_id: Uuid,
+    since: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<Event>, AppError> {
+    let rows = sqlx::query(
+        "SELECT id, user_id, timestamp, event_type, entity, project, language, branch, activity, machine, metadata, created_at
+         FROM events WHERE user_id = ? AND timestamp > ? ORDER BY timestamp ASC LIMIT ?",
+    )
+    .bind(user_id.to_string())
+    .bind(since.to_rfc3339())
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    rows.iter().map(|row| {
+        let id: i64 = row.get("id");
+        let uid_str: String = row.get("user_id");
+        let uid = Uuid::parse_str(&uid_str).map_err(|e| AppError::Database(e.to_string()))?;
+        let ts_str: String = row.get("timestamp");
+        let timestamp = DateTime::parse_from_rfc3339(&ts_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let et_str: String = row.get("event_type");
+        let activity_str: Option<String> = row.get("activity");
+        let metadata_str: Option<String> = row.get("metadata");
+        let created_str: Option<String> = row.get("created_at");
+        let created_at = created_str.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))
+        });
+
+        Ok(Event {
+            id: Some(id),
+            user_id: uid,
+            timestamp,
+            event_type: timeforged_core::models::EventType::from_str_lossy(&et_str),
+            entity: row.get("entity"),
+            project: row.get("project"),
+            language: row.get("language"),
+            branch: row.get("branch"),
+            activity: activity_str.map(|a| timeforged_core::models::ActivityType::from_str_lossy(&a)),
+            machine: row.get("machine"),
+            metadata: metadata_str.and_then(|s| serde_json::from_str(&s).ok()),
+            created_at,
+        })
+    }).collect()
 }
 
 // --- Reports ---

@@ -8,6 +8,8 @@ pub struct User {
     pub username: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub public_profile: bool,
     pub created_at: DateTime<Utc>,
 }
 

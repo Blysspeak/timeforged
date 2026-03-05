@@ -1,4 +1,4 @@
-use axum::{Router, middleware, routing::{delete, get, post}};
+use axum::{Router, middleware, routing::{delete, get, post, put}};
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
@@ -7,7 +7,7 @@ use tower_http::trace::TraceLayer;
 use timeforged_core::config::AppConfig;
 
 use crate::auth;
-use crate::handlers::{events, health, reports, users, watcher};
+use crate::handlers::{card, events, health, register, reports, users, watcher};
 use crate::watcher::WatcherCommand;
 use crate::web;
 
@@ -26,7 +26,7 @@ pub fn build_router(state: AppState) -> Router {
 
     let authed = Router::new()
         // Events
-        .route("/api/v1/events", post(events::create_event))
+        .route("/api/v1/events", post(events::create_event).get(events::list_events))
         .route("/api/v1/events/batch", post(events::create_batch))
         // Reports
         .route("/api/v1/reports/summary", get(reports::summary))
@@ -34,6 +34,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/reports/activity", get(reports::activity))
         // Users
         .route("/api/v1/me", get(users::me))
+        .route("/api/v1/me/public-profile", put(users::set_public_profile))
         .route("/api/v1/api-keys", post(users::create_api_key).get(users::list_api_keys))
         .route("/api/v1/api-keys/{id}", delete(users::delete_api_key))
         // Watcher
@@ -46,7 +47,10 @@ pub fn build_router(state: AppState) -> Router {
 
     let public = Router::new()
         .route("/health", get(health::health))
-        .route("/api/v1/status", get(health::status));
+        .route("/api/v1/status", get(health::status))
+        .route("/api/v1/card.svg", get(card::card_svg))
+        .route("/api/v1/card/{username}", get(card::public_card_svg))
+        .route("/api/v1/register", post(register::register));
 
     Router::new()
         .merge(authed)

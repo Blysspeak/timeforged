@@ -62,6 +62,25 @@ pub async fn delete_api_key(
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct SetPublicProfileRequest {
+    pub public: bool,
+}
+
+pub async fn set_public_profile(
+    State(state): State<AppState>,
+    Extension(AuthUser(user)): Extension<AuthUser>,
+    Json(req): Json<SetPublicProfileRequest>,
+) -> impl IntoResponse {
+    match crate::storage::sqlite::set_public_profile(&state.db, user.id, req.public).await {
+        Ok(()) => Json(serde_json::json!({
+            "public_profile": req.public,
+            "card_url": format!("/api/v1/card/{}.svg", user.username),
+        })).into_response(),
+        Err(e) => error_response(e),
+    }
+}
+
 fn error_response(e: timeforged_core::error::AppError) -> axum::response::Response {
     use timeforged_core::error::AppError;
     let (status, msg) = match &e {

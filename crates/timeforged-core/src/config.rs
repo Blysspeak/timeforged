@@ -85,6 +85,10 @@ pub struct CliConfig {
     pub server_url: String,
     #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default)]
+    pub remote_url: Option<String>,
+    #[serde(default)]
+    pub remote_key: Option<String>,
 }
 
 fn default_server_url() -> String {
@@ -96,6 +100,8 @@ impl Default for CliConfig {
         Self {
             server_url: default_server_url(),
             api_key: std::env::var("TF_API_KEY").ok(),
+            remote_url: std::env::var("TF_REMOTE_URL").ok(),
+            remote_key: std::env::var("TF_REMOTE_KEY").ok(),
         }
     }
 }

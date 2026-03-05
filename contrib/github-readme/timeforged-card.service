@@ -1,0 +1,13 @@
+[Unit]
+Description=TimeForged GitHub Profile Card Sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/timeforged-sync-card.sh
+Environment=TF_API_KEY=%h/.config/timeforged/api-key
+EnvironmentFile=-%h/.config/timeforged/card-sync.env
+
+[Install]
+WantedBy=default.target
