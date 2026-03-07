@@ -369,7 +369,7 @@ pub fn render_svg(summary: &Summary, theme: Theme) -> String {
     }
 
     // === Heatmap grid ===
-    for (i, &(_, secs)) in all_days.iter().enumerate() {
+    for (i, &(date, secs)) in all_days.iter().enumerate() {
         let cell_index = i + start_weekday as usize;
         let col = (cell_index / 7) as i32;
         let row = (cell_index % 7) as i32;
@@ -393,8 +393,14 @@ pub fn render_svg(summary: &Summary, theme: Theme) -> String {
             theme.heat_empty()
         };
 
+        let tooltip = if secs < 60.0 {
+            format!("No activity on {}", date.format("%b %d, %Y"))
+        } else {
+            format!("{} on {}", format_duration(secs), date.format("%b %d, %Y"))
+        };
+
         svg.push_str(&format!(
-            r#"  <rect x="{x}" y="{y}" width="{cell_size}" height="{cell_size}" rx="2" fill="{color}"/>
+            r#"  <rect x="{x}" y="{y}" width="{cell_size}" height="{cell_size}" rx="2" fill="{color}"><title>{tooltip}</title></rect>
 "#,
         ));
     }
