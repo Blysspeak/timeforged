@@ -67,10 +67,12 @@ On first run, an admin user and API key are created automatically:
 
 The daemon serves a built-in web dashboard at `http://127.0.0.1:6175`:
 
-- **Activity chart** — time per day (last 7 days)
+- **Period switcher** — Today / 7 Days / 30 Days / All Time
+- **All Time total** — always visible, shows cumulative hours, active days, and project count
+- **Activity chart** — time per day for the selected period
 - **Projects & Languages** — breakdown with progress bars and language icons
 - **Sessions** — recent coding sessions with duration
-- **Stats** — total time, top project, session count, events
+- **Stats** — top project, session count
 
 Localhost requests are auto-authenticated — no API key needed to view the dashboard.
 
