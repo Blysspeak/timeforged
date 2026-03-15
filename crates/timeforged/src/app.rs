@@ -1,8 +1,9 @@
 use axum::{Router, middleware, routing::{delete, get, post, put}};
-use axum::http::{HeaderValue, Method};
+use axum::http::{HeaderValue, Method, header};
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
 use tower_http::cors::CorsLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 use timeforged_core::config::AppConfig;
@@ -35,9 +36,18 @@ pub fn build_router(state: AppState) -> Router {
         ]);
 
     let authed = Router::new()
-        // Events
-        .route("/api/v1/events", post(events::create_event).get(events::list_events))
-        .route("/api/v1/events/batch", post(events::create_batch))
+        // Events (rate limited: 120 writes/min/IP)
+        .route(
+            "/api/v1/events",
+            post(events::create_event)
+                .layer(middleware::from_fn(rate_limit::event_rate_limit))
+                .get(events::list_events),
+        )
+        .route(
+            "/api/v1/events/batch",
+            post(events::create_batch)
+                .layer(middleware::from_fn(rate_limit::event_rate_limit)),
+        )
         // Reports
         .route("/api/v1/reports/summary", get(reports::summary))
         .route("/api/v1/reports/sessions", get(reports::sessions))
@@ -71,6 +81,22 @@ pub fn build_router(state: AppState) -> Router {
         .merge(public)
         .fallback(web::static_handler)
         .layer(cors)
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("x-xss-protection"),
+            HeaderValue::from_static("1; mode=block"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        ))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

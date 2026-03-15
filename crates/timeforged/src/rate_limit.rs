@@ -53,3 +53,18 @@ pub async fn register_rate_limit(
     }
     Ok(next.run(req).await)
 }
+
+/// Middleware: 120 event writes per minute per IP
+pub async fn event_rate_limit(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: axum::extract::Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    static LIMITER: std::sync::OnceLock<RateLimiter> = std::sync::OnceLock::new();
+    let limiter = LIMITER.get_or_init(|| RateLimiter::new(120, Duration::from_secs(60)));
+
+    if !limiter.check(addr.ip()) {
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
+    Ok(next.run(req).await)
+}
