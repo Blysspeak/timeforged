@@ -198,7 +198,7 @@ fi
 # ── 7. Remote registration & sync ──
 header "Setting up remote sync..."
 
-DEFAULT_REMOTE="https://blysspeak.space/tf"
+DEFAULT_REMOTE="https://timeforged.blysspeak.space"
 TF_USERNAME=""
 REMOTE_KEY=""
 REMOTE_URL=""

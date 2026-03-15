@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { api } from '../api'
+import { api, setApiKey, clearApiKey, hasApiKey } from '../api'
 import type { StatusResponse } from '../api'
 
 const status = ref<StatusResponse | null>(null)
 const statusError = ref<string | null>(null)
+const keyInput = ref('')
+const keySaved = ref(hasApiKey())
+const keyError = ref<string | null>(null)
 
 async function loadStatus() {
   statusError.value = null
@@ -13,6 +16,30 @@ async function loadStatus() {
   } catch (e: any) {
     statusError.value = e.message
   }
+}
+
+async function saveKey() {
+  keyError.value = null
+  const key = keyInput.value.trim()
+  if (!key) return
+  setApiKey(key)
+  try {
+    await api.me()
+    keySaved.value = true
+    keyInput.value = ''
+    window.location.reload()
+  } catch {
+    clearApiKey()
+    keySaved.value = false
+    keyError.value = 'Invalid API key'
+  }
+}
+
+function removeKey() {
+  clearApiKey()
+  keySaved.value = false
+  keyInput.value = ''
+  window.location.reload()
 }
 
 onMounted(loadStatus)
@@ -26,6 +53,41 @@ onMounted(loadStatus)
         <p class="tf-page-subtitle">Daemon configuration</p>
       </div>
     </header>
+
+    <!-- API Key Card -->
+    <div class="tf-card tf-animate" style="animation-delay: 0.03s">
+      <div class="tf-card-header">
+        <h3 class="tf-card-title">API Key</h3>
+        <div v-if="keySaved" class="tf-key-status">
+          <span class="tf-status-dot tf-status-ok"></span>
+          <span class="tf-status-text">Connected</span>
+        </div>
+        <div v-else class="tf-key-status">
+          <span class="tf-status-dot tf-status-err"></span>
+          <span class="tf-status-text">Not set</span>
+        </div>
+      </div>
+      <div class="tf-card-body">
+        <div v-if="keySaved" class="tf-key-connected">
+          <p class="tf-about-text">API key is configured. Dashboard is authenticated.</p>
+          <button class="tf-btn tf-btn-danger" @click="removeKey">Disconnect</button>
+        </div>
+        <div v-else class="tf-key-form">
+          <p class="tf-about-text">Enter your API key to access the dashboard.</p>
+          <div class="tf-input-group">
+            <input
+              v-model="keyInput"
+              type="password"
+              class="tf-input"
+              placeholder="tf_..."
+              @keyup.enter="saveKey"
+            />
+            <button class="tf-btn tf-btn-primary" @click="saveKey">Connect</button>
+          </div>
+          <p v-if="keyError" class="tf-key-error">{{ keyError }}</p>
+        </div>
+      </div>
+    </div>
 
     <!-- Daemon Status Card -->
     <div class="tf-card tf-animate" style="animation-delay: 0.05s">
@@ -203,5 +265,64 @@ onMounted(loadStatus)
   font-size: 12px;
   font-family: var(--tf-font-mono);
   color: var(--tf-text-tertiary);
+}
+
+/* API Key */
+.tf-key-connected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tf-key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tf-input-group {
+  display: flex;
+  gap: 8px;
+}
+.tf-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--tf-bg-base);
+  border: 1px solid var(--tf-border);
+  border-radius: var(--tf-radius-sm);
+  color: var(--tf-text-primary);
+  font-family: var(--tf-font-mono);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.tf-input:focus {
+  border-color: var(--tf-accent);
+}
+.tf-input::placeholder {
+  color: var(--tf-text-tertiary);
+}
+.tf-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--tf-radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+.tf-btn:hover { opacity: 0.85; }
+.tf-btn-primary {
+  background: var(--tf-accent);
+  color: #000;
+}
+.tf-btn-danger {
+  background: rgba(251, 113, 133, 0.12);
+  color: #fb7185;
+  border: 1px solid rgba(251, 113, 133, 0.2);
+}
+.tf-key-error {
+  font-size: 12px;
+  color: #fb7185;
 }
 </style>

@@ -25,6 +25,9 @@ The installer will:
 - Compile Rust binaries (`timeforged` daemon + `tf` CLI)
 - Install to `~/.local/bin/`
 - Set up a systemd user service
+- Register on the remote server (`timeforged.blysspeak.space`) for sync & public profile card
+- Configure auto-sync (every 15 min via systemd timer)
+- Install Claude Code hooks (if detected)
 - Install the Waybar module (if Waybar is detected)
 - Start the daemon and display your API key
 
@@ -173,6 +176,58 @@ tf send /path/to/file.rs --project myapp --language Rust  # manual heartbeat
 
 API key is configured once in `~/.config/timeforged/cli.toml` or via `TF_API_KEY`.
 
+## Remote Sync & GitHub Profile Card
+
+TimeForged can sync your local activity to a remote server and generate an SVG card for your GitHub profile.
+
+### Setup
+
+The installer handles this automatically. To set up manually:
+
+```bash
+# Register on the remote server
+tf register <username> --remote https://timeforged.blysspeak.space
+
+# Enable public profile (makes your card visible)
+tf profile --public
+
+# Sync events
+tf sync
+```
+
+### GitHub README Card
+
+Add this to your GitHub profile README:
+
+```html
+<a href="https://github.com/Blysspeak/timeforged">
+  <img src="https://timeforged.blysspeak.space/api/v1/card/<username>?theme=dark" width="766" alt="TimeForged Activity" />
+</a>
+```
+
+The card updates automatically as you sync. Available parameters:
+- `theme` — `dark` (default) or `light`
+- `days` — number of days to show (1-365, default 7)
+
+### CLI config for sync
+
+```toml
+# ~/.config/timeforged/cli.toml
+server_url = "http://127.0.0.1:6175"
+api_key = "tf_..."
+remote_url = "https://timeforged.blysspeak.space"
+remote_key = "tf_..."
+```
+
+### Public API (no auth required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/register` | Register new user (rate limited) |
+| GET | `/api/v1/card/{username}` | Public SVG profile card |
+| GET | `/api/v1/status` | Server status |
+| GET | `/health` | Health check |
+
 ## Docker
 
 ```bash
@@ -190,22 +245,27 @@ docker run -d -p 6175:6175 -v timeforged-data:/data timeforged
 
 All authenticated endpoints require the `X-Api-Key` header (or localhost access).
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check (no auth) |
-| GET | `/api/v1/status` | Daemon status (no auth) |
-| POST | `/api/v1/events` | Create event |
-| POST | `/api/v1/events/batch` | Batch create (up to 100) |
-| GET | `/api/v1/reports/summary` | Time summary by project/language/day |
-| GET | `/api/v1/reports/sessions` | Coding sessions |
-| GET | `/api/v1/reports/activity` | Hourly activity |
-| GET | `/api/v1/me` | Current user |
-| POST | `/api/v1/api-keys` | Create API key |
-| GET | `/api/v1/api-keys` | List API keys |
-| DELETE | `/api/v1/api-keys/{id}` | Delete API key |
-| POST | `/api/v1/watch` | Add watched directory |
-| DELETE | `/api/v1/watch` | Remove watched directory |
-| GET | `/api/v1/watched` | List watched directories |
+| Method | Path | Auth | Description |
+|--------|------|:----:|-------------|
+| GET | `/health` | | Health check |
+| GET | `/api/v1/status` | | Daemon status |
+| POST | `/api/v1/register` | | Register new user (rate limited) |
+| GET | `/api/v1/card/{username}` | | Public SVG profile card |
+| GET | `/api/v1/card.svg` | key | Private SVG card |
+| POST | `/api/v1/events` | key | Create event |
+| POST | `/api/v1/events/batch` | key | Batch create (up to 100) |
+| GET | `/api/v1/events` | key | Export events (for sync) |
+| GET | `/api/v1/reports/summary` | key | Time summary by project/language/day |
+| GET | `/api/v1/reports/sessions` | key | Coding sessions |
+| GET | `/api/v1/reports/activity` | key | Hourly activity |
+| GET | `/api/v1/me` | key | Current user |
+| PUT | `/api/v1/me/public-profile` | key | Toggle public profile |
+| POST | `/api/v1/api-keys` | key | Create API key |
+| GET | `/api/v1/api-keys` | key | List API keys |
+| DELETE | `/api/v1/api-keys/{id}` | key | Delete API key |
+| POST | `/api/v1/watch` | key | Add watched directory |
+| DELETE | `/api/v1/watch` | key | Remove watched directory |
+| GET | `/api/v1/watched` | key | List watched directories |
 
 ### Query parameters
 
@@ -247,6 +307,8 @@ log_level = "info"
 ```toml
 server_url = "http://127.0.0.1:6175"
 api_key = "tf_..."
+remote_url = "https://timeforged.blysspeak.space"
+remote_key = "tf_..."
 ```
 
 ### Watched directories — `~/.config/timeforged/watched.toml`
@@ -262,7 +324,7 @@ Managed via `tf init` / `tf unwatch`.
 
 All settings can be overridden with `TF_` prefix:
 
-`TF_HOST`, `TF_PORT`, `TF_DATABASE_URL`, `TF_IDLE_TIMEOUT`, `TF_LOG_LEVEL`, `TF_SERVER_URL`, `TF_API_KEY`
+`TF_HOST`, `TF_PORT`, `TF_DATABASE_URL`, `TF_IDLE_TIMEOUT`, `TF_LOG_LEVEL`, `TF_SERVER_URL`, `TF_API_KEY`, `TF_REMOTE_URL`, `TF_REMOTE_KEY`
 
 ## License
 

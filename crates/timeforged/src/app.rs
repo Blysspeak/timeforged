@@ -24,6 +24,7 @@ pub fn build_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin([
             "https://blysspeak.space".parse::<HeaderValue>().unwrap(),
+            "https://timeforged.blysspeak.space".parse::<HeaderValue>().unwrap(),
             "http://127.0.0.1:6175".parse::<HeaderValue>().unwrap(),
             "http://localhost:6175".parse::<HeaderValue>().unwrap(),
         ])
