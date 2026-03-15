@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { api } from '../api'
 import type { Summary, Session } from '../api'
 import TimeChart from '../components/TimeChart.vue'
@@ -7,10 +7,21 @@ import ProjectList from '../components/ProjectList.vue'
 import LanguageList from '../components/LanguageList.vue'
 import SessionList from '../components/SessionList.vue'
 
+type Period = 'today' | 'week' | 'month' | 'all'
+
+const period = ref<Period>('week')
 const summary = ref<Summary | null>(null)
+const allTimeSummary = ref<Summary | null>(null)
 const sessions = ref<Session[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+const periods: { key: Period; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'week', label: '7 Days' },
+  { key: 'month', label: '30 Days' },
+  { key: 'all', label: 'All Time' },
+]
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600)
@@ -19,9 +30,44 @@ function formatDuration(seconds: number): string {
   return `${m}m`
 }
 
-const todayTotal = computed(() => {
+function getRange(p: Period): { from: Date; to: Date } {
+  const now = new Date()
+  const from = new Date(now)
+  switch (p) {
+    case 'today':
+      from.setHours(0, 0, 0, 0)
+      break
+    case 'week':
+      from.setDate(from.getDate() - 7)
+      break
+    case 'month':
+      from.setDate(from.getDate() - 30)
+      break
+    case 'all':
+      from.setFullYear(2020, 0, 1)
+      break
+  }
+  return { from, to: now }
+}
+
+const periodTotal = computed(() => {
   if (!summary.value) return '0m'
   return formatDuration(summary.value.total_seconds)
+})
+
+const allTimeTotal = computed(() => {
+  if (!allTimeSummary.value) return '0m'
+  return formatDuration(allTimeSummary.value.total_seconds)
+})
+
+const allTimeProjects = computed(() => {
+  if (!allTimeSummary.value) return 0
+  return allTimeSummary.value.projects.length
+})
+
+const allTimeDays = computed(() => {
+  if (!allTimeSummary.value) return 0
+  return allTimeSummary.value.days.filter(d => d.total_seconds > 0).length
 })
 
 const topProject = computed(() => {
@@ -34,36 +80,39 @@ const topProjectPercent = computed(() => {
   return Math.round(summary.value.projects[0].percent)
 })
 
-const sessionCount = computed(() => {
-  return sessions.value.length
-})
+const sessionCount = computed(() => sessions.value.length)
 
-const totalEvents = computed(() => {
-  return sessions.value.reduce((sum, s) => sum + s.event_count, 0)
-})
+const periodLabel = computed(() => periods.find(p => p.key === period.value)?.label ?? '')
 
 async function loadData() {
   const isInitial = !summary.value
   if (isInitial) loading.value = true
   error.value = null
   try {
-    const now = new Date()
-    const weekAgo = new Date(now)
-    weekAgo.setDate(weekAgo.getDate() - 7)
+    const { from, to } = getRange(period.value)
+    const allFrom = new Date('2020-01-01T00:00:00Z').toISOString()
 
-    const [summaryData, sessionsData] = await Promise.all([
-      api.summary(weekAgo.toISOString(), now.toISOString()),
-      api.sessions(weekAgo.toISOString(), now.toISOString()),
-    ])
+    const requests: Promise<any>[] = [
+      api.summary(from.toISOString(), to.toISOString()),
+      api.sessions(from.toISOString(), to.toISOString()),
+    ]
+    // Only fetch all-time once or if period is 'all'
+    if (!allTimeSummary.value || period.value === 'all') {
+      requests.push(api.summary(allFrom, to.toISOString()))
+    }
 
-    summary.value = summaryData
-    sessions.value = sessionsData.slice(0, 10)
+    const results = await Promise.all(requests)
+    summary.value = results[0]
+    sessions.value = results[1].slice(0, 15)
+    if (results[2]) allTimeSummary.value = results[2]
   } catch (e: any) {
     if (isInitial) error.value = e.message || 'Failed to load data'
   } finally {
     loading.value = false
   }
 }
+
+watch(period, () => loadData())
 
 let pollTimer: ReturnType<typeof setInterval>
 
@@ -83,14 +132,25 @@ onUnmounted(() => {
     <header class="tf-page-header">
       <div>
         <h2 class="tf-page-title">Dashboard</h2>
-        <p class="tf-page-subtitle">Last 7 days overview</p>
+        <p class="tf-page-subtitle">{{ periodLabel }} overview</p>
       </div>
-      <button @click="loadData" class="tf-refresh-btn" :class="{ 'tf-spinning': loading }">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-        </svg>
-      </button>
+      <div class="tf-header-actions">
+        <div class="tf-period-tabs">
+          <button
+            v-for="p in periods"
+            :key="p.key"
+            class="tf-period-tab"
+            :class="{ 'tf-period-active': period === p.key }"
+            @click="period = p.key"
+          >{{ p.label }}</button>
+        </div>
+        <button @click="loadData" class="tf-refresh-btn" :class="{ 'tf-spinning': loading }">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+      </div>
     </header>
 
     <!-- Error -->
@@ -116,14 +176,25 @@ onUnmounted(() => {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
           <div class="tf-stat-content">
-            <span class="tf-stat-label">Total Time</span>
-            <span class="tf-stat-value">{{ todayTotal }}</span>
+            <span class="tf-stat-label">All Time</span>
+            <span class="tf-stat-value">{{ allTimeTotal }}</span>
           </div>
+          <span class="tf-stat-sub" v-if="allTimeDays > 0">{{ allTimeDays }} days · {{ allTimeProjects }} projects</span>
           <div class="tf-stat-glow"></div>
         </div>
 
         <div class="tf-stat-card">
           <div class="tf-stat-icon tf-stat-icon-teal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div class="tf-stat-content">
+            <span class="tf-stat-label">{{ periodLabel }}</span>
+            <span class="tf-stat-value">{{ periodTotal }}</span>
+          </div>
+        </div>
+
+        <div class="tf-stat-card">
+          <div class="tf-stat-icon tf-stat-icon-amber">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           </div>
           <div class="tf-stat-content">
@@ -134,22 +205,12 @@ onUnmounted(() => {
         </div>
 
         <div class="tf-stat-card">
-          <div class="tf-stat-icon tf-stat-icon-amber">
+          <div class="tf-stat-icon tf-stat-icon-rose">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
           <div class="tf-stat-content">
             <span class="tf-stat-label">Sessions</span>
             <span class="tf-stat-value">{{ sessionCount }}</span>
-          </div>
-        </div>
-
-        <div class="tf-stat-card">
-          <div class="tf-stat-icon tf-stat-icon-rose">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          </div>
-          <div class="tf-stat-content">
-            <span class="tf-stat-label">Events</span>
-            <span class="tf-stat-value">{{ totalEvents }}</span>
           </div>
         </div>
       </div>
@@ -158,7 +219,7 @@ onUnmounted(() => {
       <div class="tf-card tf-animate" style="animation-delay: 0.1s">
         <div class="tf-card-header">
           <h3 class="tf-card-title">Activity</h3>
-          <span class="tf-card-badge">7 days</span>
+          <span class="tf-card-badge">{{ periodLabel }}</span>
         </div>
         <div class="tf-card-body">
           <TimeChart :days="summary.days" />
@@ -231,6 +292,49 @@ onUnmounted(() => {
   font-size: 13px;
   color: var(--tf-text-tertiary);
   margin-top: 2px;
+}
+
+.tf-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Period Tabs ── */
+.tf-period-tabs {
+  display: flex;
+  background: var(--tf-bg-surface);
+  border: 1px solid var(--tf-border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.tf-period-tab {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tf-text-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--tf-font-mono);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.tf-period-tab:hover {
+  color: var(--tf-text-secondary);
+}
+
+.tf-period-active {
+  background: var(--tf-accent);
+  color: #000;
+}
+
+.tf-period-active:hover {
+  color: #000;
 }
 
 .tf-refresh-btn {
@@ -380,6 +484,15 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.tf-stat-sub {
+  position: absolute;
+  bottom: 12px;
+  right: 14px;
+  font-size: 10px;
+  color: var(--tf-text-tertiary);
+  font-family: var(--tf-font-mono);
+}
+
 .tf-stat-badge {
   position: absolute;
   top: 14px;
@@ -451,5 +564,6 @@ onUnmounted(() => {
 @media (max-width: 640px) {
   .tf-stats-grid { grid-template-columns: 1fr; }
   .tf-dashboard { padding: 20px 16px; }
+  .tf-page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
 }
 </style>
