@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1] — 2026-03-16
+
+### Security
+- **Fix API key leakage** — auto-inject now only when daemon binds to localhost, prevents key exposure on public 0.0.0.0 deployments
+- **Security headers** — X-Frame-Options: DENY, X-Content-Type-Options: nosniff, X-XSS-Protection, Referrer-Policy
+- **Event rate limiting** — 120 write requests/min/IP on event endpoints to prevent spam
+
 ## [0.4.0] — 2026-03-16
 
 ### Added
