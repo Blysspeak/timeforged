@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.2] — 2026-03-29
+
+### Added
+- **Auto-sync in daemon** — background task periodically pushes events to remote server (default 5min, configurable via `sync_interval` in config.toml) (e6c7115)
+
+### Fixed
+- **CLI sync pagination** — client requested limit=50000 while server caps at 5000, breaking multi-page sync (e6c7115)
+
 ## [0.4.1] — 2026-03-16
 
 ### Security
