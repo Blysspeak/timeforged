@@ -4,6 +4,7 @@ mod handlers;
 mod rate_limit;
 mod service;
 mod storage;
+mod sync;
 mod watcher;
 mod web;
 
@@ -107,6 +108,15 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move {
             let mut rx = watcher_rx;
             while rx.recv().await.is_some() {}
+        });
+    }
+
+    // Spawn auto-sync to remote
+    if let Some(user_id) = watcher_user_id {
+        let sync_pool = pool.clone();
+        let sync_interval = config.sync_interval;
+        tokio::spawn(async move {
+            sync::run(sync_pool, user_id, sync_interval).await;
         });
     }
 

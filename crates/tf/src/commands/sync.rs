@@ -35,7 +35,7 @@ fn save_sync_state(state: &SyncStateFile) {
 pub async fn run(local: &TfClient, remote: &TfClient) {
     let mut sync_state = load_sync_state();
     let batch_size = 100;
-    let page_size = 50_000;
+    let page_size = 5_000;
     let mut grand_accepted = 0usize;
     let mut grand_rejected = 0usize;
 

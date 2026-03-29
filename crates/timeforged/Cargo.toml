@@ -25,3 +25,4 @@ notify = { workspace = true }
 globset = { workspace = true }
 rust-embed = { workspace = true }
 mime_guess = { workspace = true }
+reqwest = { workspace = true }

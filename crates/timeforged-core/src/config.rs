@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub idle_timeout: u64,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_sync_interval")]
+    pub sync_interval: u64,
 }
 
 fn default_host() -> String {
@@ -43,6 +45,13 @@ fn default_log_level() -> String {
     std::env::var("TF_LOG_LEVEL").unwrap_or_else(|_| "info".into())
 }
 
+fn default_sync_interval() -> u64 {
+    std::env::var("TF_SYNC_INTERVAL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300)
+}
+
 fn dirs_or_default() -> String {
     dirs_data().unwrap_or_else(|| "/tmp/timeforged".into())
 }
@@ -60,6 +69,7 @@ impl Default for AppConfig {
             database_url: default_database_url(),
             idle_timeout: default_idle_timeout(),
             log_level: default_log_level(),
+            sync_interval: default_sync_interval(),
         }
     }
 }
