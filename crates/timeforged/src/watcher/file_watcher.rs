@@ -241,8 +241,5 @@ enum WatcherControlMsg {
 }
 
 fn hostname() -> Option<String> {
-    std::env::var("HOSTNAME")
-        .or_else(|_| std::env::var("HOST"))
-        .ok()
-        .or_else(|| std::fs::read_to_string("/etc/hostname").ok().map(|s| s.trim().to_string()))
+    gethostname::gethostname().into_string().ok()
 }

@@ -1,0 +1,27 @@
+[package]
+name = "timeforged-tray"
+description = "TimeForged system tray application"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "timeforged-tray"
+path = "src/main.rs"
+
+[dependencies]
+timeforged-core = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tray-icon = { workspace = true }
+image = { workspace = true }
+open = { workspace = true }
+dirs = { workspace = true }
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"

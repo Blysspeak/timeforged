@@ -26,3 +26,8 @@ globset = { workspace = true }
 rust-embed = { workspace = true }
 mime_guess = { workspace = true }
 reqwest = { workspace = true }
+gethostname = { workspace = true }
+dirs = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }

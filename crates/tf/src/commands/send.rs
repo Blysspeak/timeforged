@@ -44,12 +44,17 @@ pub async fn run(
 }
 
 fn hostname() -> Option<String> {
-    std::env::var("HOSTNAME")
-        .or_else(|_| std::env::var("HOST"))
-        .ok()
-        .or_else(|| {
-            std::fs::read_to_string("/etc/hostname")
-                .ok()
-                .map(|h| h.trim().to_string())
-        })
+    gethostname::gethostname().into_string().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hostname_returns_some() {
+        let h = hostname();
+        assert!(h.is_some());
+        assert!(!h.unwrap().is_empty());
+    }
 }

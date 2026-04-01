@@ -53,12 +53,15 @@ fn default_sync_interval() -> u64 {
 }
 
 fn dirs_or_default() -> String {
-    dirs_data().unwrap_or_else(|| "/tmp/timeforged".into())
+    dirs_data().unwrap_or_else(|| {
+        let tmp = std::env::temp_dir().join("timeforged");
+        tmp.to_string_lossy().to_string()
+    })
 }
 
 fn dirs_data() -> Option<String> {
-    let home = std::env::var("HOME").ok()?;
-    Some(format!("{home}/.local/share/timeforged"))
+    let base = dirs::data_dir()?;
+    Some(base.join("timeforged").to_string_lossy().to_string())
 }
 
 impl Default for AppConfig {
@@ -128,8 +131,9 @@ impl CliConfig {
 }
 
 pub fn config_dir() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    std::path::PathBuf::from(format!("{home}/.config/timeforged"))
+    dirs::config_dir()
+        .unwrap_or_else(|| std::env::temp_dir())
+        .join("timeforged")
 }
 
 // --- Watcher config ---
@@ -218,5 +222,117 @@ impl WatchedRegistry {
 
     pub fn list(&self) -> &[WatchedDir] {
         &self.dirs
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_dir_returns_timeforged_subdir() {
+        let dir = config_dir();
+        assert!(dir.ends_with("timeforged"), "config_dir should end with 'timeforged', got: {}", dir.display());
+    }
+
+    #[test]
+    fn config_dir_is_absolute() {
+        let dir = config_dir();
+        assert!(dir.is_absolute(), "config_dir should be absolute, got: {}", dir.display());
+    }
+
+    #[test]
+    fn app_config_defaults() {
+        let config = AppConfig::default();
+        assert_eq!(config.host, "127.0.0.1");
+        assert_eq!(config.port, 6175);
+        assert_eq!(config.idle_timeout, 300);
+        assert_eq!(config.log_level, "info");
+        assert_eq!(config.sync_interval, 300);
+        assert!(config.database_url.starts_with("sqlite:"));
+        assert!(config.database_url.contains("timeforged.db"));
+    }
+
+    #[test]
+    fn app_config_bind_addr() {
+        let config = AppConfig::default();
+        assert_eq!(config.bind_addr(), "127.0.0.1:6175");
+    }
+
+    #[test]
+    fn cli_config_defaults() {
+        let config = CliConfig::default();
+        assert_eq!(config.server_url, "http://127.0.0.1:6175");
+    }
+
+    #[test]
+    fn app_config_from_toml() {
+        let toml_str = r#"
+            host = "0.0.0.0"
+            port = 8080
+            idle_timeout = 600
+        "#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.host, "0.0.0.0");
+        assert_eq!(config.port, 8080);
+        assert_eq!(config.idle_timeout, 600);
+        // Defaults for unset fields
+        assert_eq!(config.log_level, "info");
+    }
+
+    #[test]
+    fn cli_config_from_toml() {
+        let toml_str = r#"
+            server_url = "http://10.0.0.1:9000"
+            api_key = "tf_testkey123"
+            remote_url = "https://remote.example.com"
+            remote_key = "tf_remotekey456"
+        "#;
+        let config: CliConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.server_url, "http://10.0.0.1:9000");
+        assert_eq!(config.api_key.unwrap(), "tf_testkey123");
+        assert_eq!(config.remote_url.unwrap(), "https://remote.example.com");
+        assert_eq!(config.remote_key.unwrap(), "tf_remotekey456");
+    }
+
+    #[test]
+    fn watcher_config_defaults() {
+        let config = WatcherConfig::default();
+        assert_eq!(config.debounce_secs, 30);
+        assert_eq!(config.window_poll_secs, 15);
+        assert!(!config.enable_window_tracker);
+        assert!(config.ignore_patterns.is_empty());
+    }
+
+    #[test]
+    fn watched_registry_add_remove() {
+        let mut reg = WatchedRegistry::default();
+        assert!(reg.list().is_empty());
+
+        assert!(reg.add("/home/user/projects".into()));
+        assert_eq!(reg.list().len(), 1);
+
+        // Duplicate
+        assert!(!reg.add("/home/user/projects".into()));
+        assert_eq!(reg.list().len(), 1);
+
+        // Second path
+        assert!(reg.add("/home/user/work".into()));
+        assert_eq!(reg.list().len(), 2);
+
+        // Remove
+        assert!(reg.remove("/home/user/projects"));
+        assert_eq!(reg.list().len(), 1);
+
+        // Remove non-existent
+        assert!(!reg.remove("/nonexistent"));
+        assert_eq!(reg.list().len(), 1);
+    }
+
+    #[test]
+    fn database_url_contains_data_dir() {
+        let url = default_database_url();
+        assert!(url.starts_with("sqlite:"), "database_url should start with sqlite:");
+        assert!(url.contains("timeforged"), "database_url should contain 'timeforged'");
     }
 }

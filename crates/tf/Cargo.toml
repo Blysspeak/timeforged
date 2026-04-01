@@ -18,3 +18,4 @@ uuid = { workspace = true }
 comfy-table = { workspace = true }
 colored = { workspace = true }
 toml = { workspace = true }
+gethostname = { workspace = true }

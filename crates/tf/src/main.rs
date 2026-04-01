@@ -160,7 +160,8 @@ async fn main() {
         }
         Commands::Sync => {
             let remote_url = config.remote_url.clone().unwrap_or_else(|| {
-                eprintln!("No remote URL configured. Set remote_url in ~/.config/timeforged/cli.toml or TF_REMOTE_URL env var.");
+                let cfg = timeforged_core::config::config_dir().join("cli.toml");
+                eprintln!("No remote URL configured. Set remote_url in {} or TF_REMOTE_URL env var.", cfg.display());
                 std::process::exit(1);
             });
             let remote_config = CliConfig {
@@ -180,7 +181,8 @@ async fn main() {
             let remote_url = remote
                 .or_else(|| config.remote_url.clone())
                 .unwrap_or_else(|| {
-                    eprintln!("No remote URL. Use --remote <url> or set remote_url in ~/.config/timeforged/cli.toml");
+                    let cfg = timeforged_core::config::config_dir().join("cli.toml");
+                    eprintln!("No remote URL. Use --remote <url> or set remote_url in {}", cfg.display());
                     std::process::exit(1);
                 });
             let remote_config = CliConfig {

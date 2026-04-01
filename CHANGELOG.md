@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0] — 2026-04-01
+
+### Added
+- **Windows support** — full cross-platform daemon, CLI, and file watcher via `dirs` + `gethostname` crates
+- **System tray app** (`timeforged-tray`) — icon in tray, tooltip with today's time + per-project breakdown, click opens dashboard
+- **Windows window tracker** — `GetForegroundWindow` + `GetWindowTextW` via `windows-sys` crate
+- **Windows installer** (`install.ps1`) — auto-installs Rust, Node.js, jq via winget/scoop/choco, configures Task Scheduler + Startup
+- **Cross-platform installer** — `install.sh` auto-detects OS, installs all dependencies (Rust, Node, jq, GTK dev libs), supports both Linux and Windows (Git Bash)
+- **Test suite** — 50 unit tests across all crates (config, models, util, debounce, window tracker, tray poller)
+
+### Changed
+- Config paths use `dirs` crate (`%APPDATA%` on Windows, `~/.config` on Linux) instead of hardcoded `$HOME/.config`
+- Data paths use `dirs::data_dir()` (`%LOCALAPPDATA%` on Windows, `~/.local/share` on Linux)
+- Hostname detection uses `gethostname` crate instead of `/etc/hostname`
+- Window title path extraction supports Windows paths (`C:\...`)
+- Error messages in CLI show platform-appropriate config paths
+- Installer auto-installs all prerequisites (Rust, Node.js, jq, curl, GTK dev headers)
+- Installer auto-adds `~/.local/bin` to shell profile PATH
+
 ## [0.4.2] — 2026-03-29
 
 ### Added

@@ -102,3 +102,95 @@ pub fn is_ignored_path(path: &Path) -> bool {
 
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // ── infer_language_from_path ──
+
+    #[test]
+    fn infer_rust() {
+        assert_eq!(infer_language_from_path("main.rs"), Some("Rust".into()));
+        assert_eq!(infer_language_from_path("/home/user/project/src/lib.rs"), Some("Rust".into()));
+    }
+
+    #[test]
+    fn infer_typescript() {
+        assert_eq!(infer_language_from_path("app.ts"), Some("TypeScript".into()));
+        assert_eq!(infer_language_from_path("Component.tsx"), Some("TypeScript".into()));
+    }
+
+    #[test]
+    fn infer_javascript() {
+        assert_eq!(infer_language_from_path("index.js"), Some("JavaScript".into()));
+        assert_eq!(infer_language_from_path("App.jsx"), Some("JavaScript".into()));
+    }
+
+    #[test]
+    fn infer_python() {
+        assert_eq!(infer_language_from_path("script.py"), Some("Python".into()));
+    }
+
+    #[test]
+    fn infer_special_files() {
+        assert_eq!(infer_language_from_path("Dockerfile"), Some("Docker".into()));
+        assert_eq!(infer_language_from_path("Makefile"), Some("Makefile".into()));
+        assert_eq!(infer_language_from_path(".gitignore"), Some("Git Config".into()));
+        assert_eq!(infer_language_from_path("Cargo.toml"), Some("TOML".into()));
+        assert_eq!(infer_language_from_path("package.json"), Some("JSON".into()));
+        assert_eq!(infer_language_from_path(".env"), Some("Env".into()));
+    }
+
+    #[test]
+    fn infer_markup() {
+        assert_eq!(infer_language_from_path("index.html"), Some("HTML".into()));
+        assert_eq!(infer_language_from_path("style.css"), Some("CSS".into()));
+        assert_eq!(infer_language_from_path("style.scss"), Some("CSS".into()));
+        assert_eq!(infer_language_from_path("README.md"), Some("Markdown".into()));
+    }
+
+    #[test]
+    fn infer_unknown_returns_none() {
+        assert_eq!(infer_language_from_path("file.xyz"), None);
+        assert_eq!(infer_language_from_path("noextension"), None);
+    }
+
+    #[test]
+    fn infer_windows_paths() {
+        assert_eq!(infer_language_from_path("C:\\Users\\dev\\project\\main.rs"), Some("Rust".into()));
+        assert_eq!(infer_language_from_path("D:\\work\\app.ts"), Some("TypeScript".into()));
+    }
+
+    // ── is_ignored_path ──
+
+    #[test]
+    fn ignored_dirs() {
+        assert!(is_ignored_path(&PathBuf::from("/project/.git/config")));
+        assert!(is_ignored_path(&PathBuf::from("/project/node_modules/foo/bar.js")));
+        assert!(is_ignored_path(&PathBuf::from("/project/target/debug/main")));
+        assert!(is_ignored_path(&PathBuf::from("/project/__pycache__/mod.pyc")));
+        assert!(is_ignored_path(&PathBuf::from("/project/.venv/bin/python")));
+        assert!(is_ignored_path(&PathBuf::from("/project/.idea/workspace.xml")));
+        assert!(is_ignored_path(&PathBuf::from("/project/dist/index.js")));
+    }
+
+    #[test]
+    fn ignored_extensions() {
+        assert!(is_ignored_path(&PathBuf::from("/project/Cargo.lock")));
+        assert!(is_ignored_path(&PathBuf::from("/project/app.exe")));
+        assert!(is_ignored_path(&PathBuf::from("/project/lib.so")));
+        assert!(is_ignored_path(&PathBuf::from("/project/lib.dll")));
+        assert!(is_ignored_path(&PathBuf::from("/project/module.wasm")));
+        assert!(is_ignored_path(&PathBuf::from("/project/mod.pyc")));
+    }
+
+    #[test]
+    fn not_ignored_normal_files() {
+        assert!(!is_ignored_path(&PathBuf::from("/project/src/main.rs")));
+        assert!(!is_ignored_path(&PathBuf::from("/project/README.md")));
+        assert!(!is_ignored_path(&PathBuf::from("/project/app.ts")));
+        assert!(!is_ignored_path(&PathBuf::from("/home/user/work/foo/bar.py")));
+    }
+}

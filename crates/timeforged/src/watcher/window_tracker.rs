@@ -57,9 +57,7 @@ pub async fn run(
         let language = infer_language_from_path(file_path.to_str().unwrap_or(""));
         let entity = file_path.to_string_lossy().to_string();
 
-        let machine = std::env::var("HOSTNAME")
-            .or_else(|_| std::env::var("HOST"))
-            .ok();
+        let machine = gethostname::gethostname().into_string().ok();
 
         let event = timeforged_core::models::Event {
             id: None,
@@ -82,6 +80,9 @@ pub async fn run(
     }
 }
 
+// --- Platform-specific: get active window title ---
+
+#[cfg(unix)]
 async fn get_active_window_title() -> Option<String> {
     // Try hyprctl first (Hyprland)
     let result = tokio::process::Command::new("hyprctl")
@@ -118,32 +119,83 @@ async fn get_active_window_title() -> Option<String> {
     None
 }
 
+#[cfg(windows)]
+async fn get_active_window_title() -> Option<String> {
+    // Spawn blocking because Win32 API calls are synchronous
+    tokio::task::spawn_blocking(|| {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+
+        unsafe {
+            let hwnd = windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow();
+            if hwnd.is_null() {
+                return None;
+            }
+
+            let mut buf = [0u16; 512];
+            let len = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowTextW(
+                hwnd,
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+            );
+            if len <= 0 {
+                return None;
+            }
+
+            let title = OsString::from_wide(&buf[..len as usize]);
+            title.into_string().ok()
+        }
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+#[cfg(not(any(unix, windows)))]
+async fn get_active_window_title() -> Option<String> {
+    None
+}
+
+// --- Cross-platform: extract file path from window title ---
+
 fn extract_file_path(title: &str) -> Option<PathBuf> {
     // Common editor title patterns:
     // "file.rs - ProjectName - VSCode"
     // "file.rs (~/projects/foo) - NVIM"
     // "/home/user/projects/foo/file.rs - Editor"
+    // "C:\Users\user\projects\foo\file.rs - Editor"
 
-    // Look for absolute paths
-    for part in title.split(|c: char| c == ' ' || c == '\t' || c == '—' || c == '–') {
+    for part in title.split(|c: char| c == ' ' || c == '\t' || c == '\u{2014}' || c == '\u{2013}') {
         let trimmed = part.trim();
+
+        // Unix absolute paths
         if trimmed.starts_with('/') && trimmed.len() > 1 {
             let path = Path::new(trimmed);
             if path.extension().is_some() {
                 return Some(path.to_path_buf());
             }
         }
+
+        // Windows absolute paths (C:\, D:\, etc.)
+        if trimmed.len() > 3 && trimmed.as_bytes().get(1) == Some(&b':') {
+            let third = trimmed.as_bytes().get(2);
+            if third == Some(&b'\\') || third == Some(&b'/') {
+                let path = Path::new(trimmed);
+                if path.extension().is_some() {
+                    return Some(path.to_path_buf());
+                }
+            }
+        }
     }
 
-    // Look for ~ paths
-    if let Some(home) = std::env::var("HOME").ok() {
+    // Look for ~ paths (Unix-style home shortcut)
+    if let Some(home) = dirs::home_dir() {
         for part in title.split(|c: char| c == ' ' || c == '\t' || c == '(' || c == ')') {
             let trimmed = part.trim();
             if trimmed.starts_with("~/") {
-                let expanded = trimmed.replacen("~/", &format!("{home}/"), 1);
-                let path = Path::new(&expanded);
-                if path.extension().is_some() {
-                    return Some(path.to_path_buf());
+                let expanded: PathBuf = home.join(&trimmed[2..]);
+                if expanded.extension().is_some() {
+                    return Some(expanded);
                 }
             }
         }
@@ -160,4 +212,80 @@ fn resolve_project_name(watched_root: &Path, file_path: &Path) -> Option<String>
         return None;
     }
     Some(name.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── extract_file_path ──
+
+    #[test]
+    fn extract_unix_absolute_path() {
+        let title = "/home/user/project/src/main.rs — Editor";
+        let result = extract_file_path(title);
+        assert_eq!(result, Some(PathBuf::from("/home/user/project/src/main.rs")));
+    }
+
+    #[test]
+    fn extract_unix_path_vscode_style() {
+        let title = "main.rs /home/user/project/src/main.rs VSCode";
+        let result = extract_file_path(title);
+        assert_eq!(result, Some(PathBuf::from("/home/user/project/src/main.rs")));
+    }
+
+    #[test]
+    fn extract_tilde_path() {
+        let title = "file.rs (~/projects/foo/src/file.rs) - NVIM";
+        let result = extract_file_path(title);
+        assert!(result.is_some());
+        let path = result.unwrap();
+        assert!(path.ends_with("projects/foo/src/file.rs"));
+        // Should be expanded (no ~)
+        assert!(!path.to_string_lossy().contains('~'));
+    }
+
+    #[test]
+    fn extract_no_path_returns_none() {
+        assert_eq!(extract_file_path("Welcome - VSCode"), None);
+        assert_eq!(extract_file_path("Untitled-1"), None);
+        assert_eq!(extract_file_path(""), None);
+    }
+
+    #[test]
+    fn extract_ignores_dirs_without_extension() {
+        assert_eq!(extract_file_path("/home/user/project — Editor"), None);
+    }
+
+    // ── resolve_project_name ──
+
+    #[test]
+    fn resolve_project_from_watched_root() {
+        let root = Path::new("/home/user/projects");
+        let file = Path::new("/home/user/projects/myapp/src/main.rs");
+        assert_eq!(resolve_project_name(root, file), Some("myapp".into()));
+    }
+
+    #[test]
+    fn resolve_project_ignores_dotdirs() {
+        let root = Path::new("/home/user/projects");
+        let file = Path::new("/home/user/projects/.hidden/foo.rs");
+        assert_eq!(resolve_project_name(root, file), None);
+    }
+
+    #[test]
+    fn resolve_project_wrong_root_returns_none() {
+        let root = Path::new("/home/user/projects");
+        let file = Path::new("/home/other/file.rs");
+        assert_eq!(resolve_project_name(root, file), None);
+    }
+
+    // ── hostname ──
+
+    #[test]
+    fn hostname_returns_value() {
+        let machine = gethostname::gethostname().into_string().ok();
+        assert!(machine.is_some(), "gethostname should return a hostname");
+        assert!(!machine.unwrap().is_empty());
+    }
 }

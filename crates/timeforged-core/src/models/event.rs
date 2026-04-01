@@ -94,3 +94,74 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<DateTime<Utc>>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_type_roundtrip() {
+        assert_eq!(EventType::from_str_lossy("file"), EventType::File);
+        assert_eq!(EventType::from_str_lossy("terminal"), EventType::Terminal);
+        assert_eq!(EventType::from_str_lossy("browser"), EventType::Browser);
+        assert_eq!(EventType::from_str_lossy("meeting"), EventType::Meeting);
+        assert_eq!(EventType::from_str_lossy("custom"), EventType::Custom);
+        assert_eq!(EventType::from_str_lossy("unknown"), EventType::Custom);
+
+        assert_eq!(EventType::File.as_str(), "file");
+        assert_eq!(EventType::Terminal.as_str(), "terminal");
+    }
+
+    #[test]
+    fn activity_type_roundtrip() {
+        assert_eq!(ActivityType::from_str_lossy("coding"), ActivityType::Coding);
+        assert_eq!(ActivityType::from_str_lossy("browsing"), ActivityType::Browsing);
+        assert_eq!(ActivityType::from_str_lossy("unknown"), ActivityType::Other);
+
+        assert_eq!(ActivityType::Coding.as_str(), "coding");
+        assert_eq!(ActivityType::Other.as_str(), "other");
+    }
+
+    #[test]
+    fn event_type_serde_json() {
+        let event_type = EventType::File;
+        let json = serde_json::to_string(&event_type).unwrap();
+        assert_eq!(json, "\"file\"");
+
+        let parsed: EventType = serde_json::from_str("\"terminal\"").unwrap();
+        assert_eq!(parsed, EventType::Terminal);
+    }
+
+    #[test]
+    fn activity_type_serde_json() {
+        let activity = ActivityType::Coding;
+        let json = serde_json::to_string(&activity).unwrap();
+        assert_eq!(json, "\"coding\"");
+
+        let parsed: ActivityType = serde_json::from_str("\"debugging\"").unwrap();
+        assert_eq!(parsed, ActivityType::Debugging);
+    }
+
+    #[test]
+    fn event_serialize_skip_none() {
+        let event = Event {
+            id: None,
+            user_id: Uuid::nil(),
+            timestamp: Utc::now(),
+            event_type: EventType::File,
+            entity: "test.rs".into(),
+            project: None,
+            language: Some("Rust".into()),
+            branch: None,
+            activity: None,
+            machine: None,
+            metadata: None,
+            created_at: None,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(!json.contains("project"));
+        assert!(!json.contains("branch"));
+        assert!(json.contains("language"));
+        assert!(json.contains("Rust"));
+    }
+}
