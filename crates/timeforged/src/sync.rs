@@ -25,11 +25,15 @@ fn load_sync_state() -> SyncStateFile {
         toml::from_str(&content).unwrap_or(SyncStateFile {
             last_synced: None,
             events_synced: 0,
+            last_pulled: None,
+            events_pulled: 0,
         })
     } else {
         SyncStateFile {
             last_synced: None,
             events_synced: 0,
+            last_pulled: None,
+            events_pulled: 0,
         }
     }
 }

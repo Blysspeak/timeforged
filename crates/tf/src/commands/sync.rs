@@ -15,11 +15,15 @@ fn load_sync_state() -> SyncStateFile {
         toml::from_str(&content).unwrap_or(SyncStateFile {
             last_synced: None,
             events_synced: 0,
+            last_pulled: None,
+            events_pulled: 0,
         })
     } else {
         SyncStateFile {
             last_synced: None,
             events_synced: 0,
+            last_pulled: None,
+            events_pulled: 0,
         }
     }
 }
@@ -34,29 +38,87 @@ fn save_sync_state(state: &SyncStateFile) {
 
 pub async fn run(local: &TfClient, remote: &TfClient) {
     let mut sync_state = load_sync_state();
+
+    // Phase 1: Push (local → remote)
+    println!("{}", "Pushing local → remote...".dimmed());
+    let (pushed, push_rejected) = sync_events(local, remote, &mut sync_state, Direction::Push).await;
+
+    // Phase 2: Pull (remote → local)
+    println!("{}", "Pulling remote → local...".dimmed());
+    let (pulled, pull_rejected) = sync_events(remote, local, &mut sync_state, Direction::Pull).await;
+
+    // Summary
+    if pushed == 0 && pulled == 0 && push_rejected == 0 && pull_rejected == 0 {
+        println!("{} everything up to date", "✓".green());
+    } else {
+        if pushed > 0 || push_rejected > 0 {
+            println!(
+                "{} pushed {} events ({} rejected)",
+                "↑".cyan(),
+                pushed.to_string().cyan(),
+                push_rejected,
+            );
+        }
+        if pulled > 0 || pull_rejected > 0 {
+            println!(
+                "{} pulled {} events ({} rejected)",
+                "↓".cyan(),
+                pulled.to_string().cyan(),
+                pull_rejected,
+            );
+        }
+        println!(
+            "  total synced: {} pushed, {} pulled",
+            sync_state.events_synced,
+            sync_state.events_pulled,
+        );
+    }
+}
+
+enum Direction {
+    Push,
+    Pull,
+}
+
+async fn sync_events(
+    source: &TfClient,
+    target: &TfClient,
+    sync_state: &mut SyncStateFile,
+    direction: Direction,
+) -> (usize, usize) {
     let batch_size = 100;
     let page_size = 5_000;
     let mut grand_accepted = 0usize;
     let mut grand_rejected = 0usize;
 
+    let last_timestamp = match direction {
+        Direction::Push => &sync_state.last_synced,
+        Direction::Pull => &sync_state.last_pulled,
+    }
+    .clone();
+
+    let mut current_timestamp = last_timestamp;
+
     loop {
-        // Build query params for local events export
         let mut query = vec![("limit", page_size.to_string())];
-        if let Some(since) = &sync_state.last_synced {
+        if let Some(since) = &current_timestamp {
             query.push(("since", since.to_rfc3339()));
         }
 
         let query_refs: Vec<(&str, &str)> = query.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
-        // Fetch events from local daemon
-        let export: ExportEventsResponse = match local
+        let export: ExportEventsResponse = match source
             .get_with_query("/api/v1/events", &query_refs)
             .await
         {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("{}: failed to fetch local events: {e}", "error".red());
-                std::process::exit(1);
+                let label = match direction {
+                    Direction::Push => "local",
+                    Direction::Pull => "remote",
+                };
+                eprintln!("{}: failed to fetch {} events: {e}", "error".red(), label);
+                break;
             }
         };
 
@@ -65,14 +127,19 @@ pub async fn run(local: &TfClient, remote: &TfClient) {
         }
 
         let page_count = export.count;
+        let arrow = match direction {
+            Direction::Push => "↑",
+            Direction::Pull => "↓",
+        };
         println!(
-            "Found {} new events to sync...",
+            "  {} {} events to sync...",
+            arrow,
             page_count.to_string().cyan()
         );
 
         let mut page_accepted = 0usize;
         let mut page_rejected = 0usize;
-        let mut latest_timestamp = sync_state.last_synced;
+        let mut latest_timestamp = current_timestamp;
         let mut had_error = false;
 
         for chunk in export.events.chunks(batch_size) {
@@ -98,7 +165,7 @@ pub async fn run(local: &TfClient, remote: &TfClient) {
 
             let batch = BatchEventRequest { events };
 
-            match remote
+            match target
                 .post::<BatchEventResponse, _>("/api/v1/events/batch", &batch)
                 .await
             {
@@ -114,10 +181,19 @@ pub async fn run(local: &TfClient, remote: &TfClient) {
             }
         }
 
-        // Update sync state after each page
-        sync_state.last_synced = latest_timestamp;
-        sync_state.events_synced += page_accepted as u64;
-        save_sync_state(&sync_state);
+        current_timestamp = latest_timestamp;
+
+        match direction {
+            Direction::Push => {
+                sync_state.last_synced = current_timestamp;
+                sync_state.events_synced += page_accepted as u64;
+            }
+            Direction::Pull => {
+                sync_state.last_pulled = current_timestamp;
+                sync_state.events_pulled += page_accepted as u64;
+            }
+        }
+        save_sync_state(sync_state);
 
         grand_accepted += page_accepted;
         grand_rejected += page_rejected;
@@ -127,15 +203,5 @@ pub async fn run(local: &TfClient, remote: &TfClient) {
         }
     }
 
-    if grand_accepted == 0 && grand_rejected == 0 {
-        println!("{} no new events to sync", "✓".green());
-    } else {
-        println!(
-            "{} synced {} events ({} rejected, {} total synced)",
-            "✓".green(),
-            grand_accepted.to_string().cyan(),
-            grand_rejected,
-            sync_state.events_synced,
-        );
-    }
+    (grand_accepted, grand_rejected)
 }

@@ -128,6 +128,10 @@ pub struct SyncStateFile {
     pub last_synced: Option<DateTime<Utc>>,
     #[serde(default)]
     pub events_synced: u64,
+    #[serde(default)]
+    pub last_pulled: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub events_pulled: u64,
 }
 
 // --- Generic responses ---

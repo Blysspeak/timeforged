@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     TimeForged Installer for Windows
@@ -204,7 +204,10 @@ Pop-Location
 Write-Header "Building Rust binaries..."
 
 Write-Info "Compiling (this may take a few minutes on first run)..."
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
 cargo build --release 2>&1 | Select-String "Compiling|Finished" | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+$ErrorActionPreference = $prev
+if ($LASTEXITCODE -ne 0) { Write-Fail "cargo build failed (exit code $LASTEXITCODE)" }
 Write-Ok "Binaries built"
 
 $DaemonBin = "$ProjectDir\target\release\timeforged.exe"
