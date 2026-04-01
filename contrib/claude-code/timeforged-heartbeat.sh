@@ -4,9 +4,16 @@
 # Fires on: UserPromptSubmit, PostToolUse, Stop
 # Runs curl in the background so it never blocks Claude Code.
 
-TF_CONFIG="${HOME}/.config/timeforged/cli.toml"
+# Config path: Windows (%APPDATA%) or Linux/macOS (~/.config)
+if [[ -n "$APPDATA" ]]; then
+  TF_CONFIG="$APPDATA/timeforged/cli.toml"
+elif [[ "$(uname)" == "Darwin" ]]; then
+  TF_CONFIG="${HOME}/Library/Application Support/timeforged/cli.toml"
+else
+  TF_CONFIG="${HOME}/.config/timeforged/cli.toml"
+fi
 TF_SERVER_URL="${TF_SERVER_URL:-http://127.0.0.1:6175}"
-TF_API_KEY="${TF_API_KEY:-$(grep -oP 'api_key\s*=\s*"\K[^"]+' "$TF_CONFIG" 2>/dev/null)}"
+TF_API_KEY="${TF_API_KEY:-$(grep -oP 'api_key\s*=\s*"\K[^"]+' "$TF_CONFIG" 2>/dev/null || grep -o 'api_key *= *"[^"]*"' "$TF_CONFIG" 2>/dev/null | sed 's/.*"\(.*\)"/\1/')}"
 
 # No key = no tracking
 [[ -z "$TF_API_KEY" ]] && exit 0
@@ -14,7 +21,7 @@ TF_API_KEY="${TF_API_KEY:-$(grep -oP 'api_key\s*=\s*"\K[^"]+' "$TF_CONFIG" 2>/de
 INPUT="$(cat)"
 
 # Debounce: skip if last heartbeat was <30s ago
-STAMP="/tmp/.tf-heartbeat-stamp"
+STAMP="${TMPDIR:-${TMP:-/tmp}}/.tf-heartbeat-stamp"
 NOW=$(date +%s)
 if [[ -f "$STAMP" ]]; then
   LAST=$(cat "$STAMP")

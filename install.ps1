@@ -333,48 +333,74 @@ try {
     Invoke-RestMethod -Uri "$RemoteUrl/health" -TimeoutSec 5 | Out-Null
     Write-Ok "Remote server reachable"
 
-    while ($true) {
-        $TfUsername = Read-Host "  ▸ Choose a username"
-        if ([string]::IsNullOrWhiteSpace($TfUsername)) {
-            Write-Warn "Username cannot be empty"
-            continue
-        }
+    Write-Host ""
+    Write-Host "  [1] New account  — create a new username on the server"
+    Write-Host "  [2] Link         — connect to an existing account with an API key"
+    Write-Host "  [3] Skip         — set up remote sync later"
+    Write-Host ""
+    $Choice = Read-Host "  ▸ Choose [1/2/3]"
 
-        Write-Info "Registering as $TfUsername..."
-        try {
-            $regOutput = & "$InstallDir\tf.exe" register $TfUsername --remote $RemoteUrl 2>&1 | Out-String
-            if ($regOutput -match "tf_\w+") {
-                $RemoteKey = $Matches[0]
-                Write-Ok "Registered as $TfUsername"
-                $RemoteOk = $true
-                break
-            } else {
-                Write-Warn "Registered but could not extract API key"
-                break
+    switch ($Choice) {
+        "1" {
+            $TfUsername = Read-Host "  ▸ Choose a username"
+            if (-not [string]::IsNullOrWhiteSpace($TfUsername)) {
+                Write-Info "Registering as $TfUsername..."
+                try {
+                    $regOutput = & "$InstallDir\tf.exe" register $TfUsername --remote $RemoteUrl 2>&1 | Out-String
+                    if ($regOutput -match "tf_\w+") {
+                        $RemoteKey = $Matches[0]
+                        Write-Ok "Registered as $TfUsername"
+                        $RemoteOk = $true
+                    } else {
+                        Write-Warn "Registration succeeded but could not extract API key"
+                    }
+                } catch {
+                    Write-Warn "Registration failed: $_"
+                }
             }
-        } catch {
-            $err = $_.ToString()
-            if ($err -match "taken|exists|conflict|409") {
-                Write-Warn "Username '$TfUsername' already taken."
-                continue
+        }
+        "2" {
+            $RemoteKey = Read-Host "  ▸ Paste your remote API key (tf_...)"
+            if ($RemoteKey -match "^tf_\w+$") {
+                Write-Info "Linking to existing account..."
+                try {
+                    $linkOutput = & "$InstallDir\tf.exe" link $RemoteKey --remote $RemoteUrl 2>&1 | Out-String
+                    Write-Ok "Linked to existing account"
+                    $RemoteOk = $true
+                } catch {
+                    Write-Warn "Link failed: $_"
+                }
             } else {
-                Write-Warn "Registration failed: $err"
-                break
+                Write-Warn "Invalid key format (expected tf_...)"
             }
+        }
+        default {
+            Write-Info "Skipping remote setup"
+            Write-Info "Run later: tf register <username> --remote $RemoteUrl"
+            Write-Info "Or link:   tf link <api-key> --remote $RemoteUrl"
         }
     }
 } catch {
     Write-Warn "Remote unreachable — skipping."
     Write-Info "Run later: tf register <username> --remote $RemoteUrl"
+    Write-Info "Or link:   tf link <api-key> --remote $RemoteUrl"
 }
 
 if ($RemoteOk -and -not [string]::IsNullOrEmpty($ApiKey)) {
-    @"
+    if ([string]::IsNullOrEmpty($RemoteKey)) {
+        # Link command saves config itself, just need remote_url
+        $existing = Get-Content $CliConfig -Raw -ErrorAction SilentlyContinue
+        if ($existing -notmatch "remote_url") {
+            Add-Content $CliConfig "`nremote_url = `"$RemoteUrl`""
+        }
+    } else {
+        @"
 server_url = "http://127.0.0.1:6175"
 api_key = "$ApiKey"
 remote_url = "$RemoteUrl"
 remote_key = "$RemoteKey"
 "@ | Set-Content $CliConfig -Encoding UTF8
+    }
     Write-Ok "Config updated with remote"
 
     & "$InstallDir\tf.exe" profile --public 2>&1 | Out-Null

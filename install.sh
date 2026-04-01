@@ -442,49 +442,73 @@ REMOTE_URL="${REMOTE_URL:-$DEFAULT_REMOTE}"
 if curl -sf --max-time 5 "$REMOTE_URL/health" >/dev/null 2>&1; then
     ok "Remote server reachable"
 
-    while true; do
-        read -rp "$(echo -e "${ORANGE}▸${RESET} Choose a username: ")" TF_USERNAME
-        if [[ -z "$TF_USERNAME" ]]; then
-            warn "Username cannot be empty"
-            continue
-        fi
+    echo ""
+    echo "  [1] New account  — create a new username on the server"
+    echo "  [2] Link         — connect to an existing account with an API key"
+    echo "  [3] Skip         — set up remote sync later"
+    echo ""
+    read -rp "$(echo -e "${ORANGE}▸${RESET} Choose [1/2/3]: ")" SYNC_CHOICE
 
-        info "Registering as $TF_USERNAME on $REMOTE_URL..."
-        REGISTER_OUTPUT=$("$INSTALL_DIR/$CLI_NAME" register "$TF_USERNAME" --remote "$REMOTE_URL" 2>&1) && REG_RC=0 || REG_RC=$?
-
-        if [[ $REG_RC -eq 0 ]]; then
-            REMOTE_KEY=$(echo "$REGISTER_OUTPUT" | grep -oP 'tf_\w+' || true)
-            if [[ -n "$REMOTE_KEY" ]]; then
-                ok "Registered as $TF_USERNAME"
-                REMOTE_OK=true
-                break
-            else
-                warn "Registered but could not extract API key"
-                echo "$REGISTER_OUTPUT"
-                break
+    case "$SYNC_CHOICE" in
+        1)
+            read -rp "$(echo -e "${ORANGE}▸${RESET} Choose a username: ")" TF_USERNAME
+            if [[ -n "$TF_USERNAME" ]]; then
+                info "Registering as $TF_USERNAME on $REMOTE_URL..."
+                REGISTER_OUTPUT=$("$INSTALL_DIR/$CLI_NAME" register "$TF_USERNAME" --remote "$REMOTE_URL" 2>&1) && REG_RC=0 || REG_RC=$?
+                if [[ $REG_RC -eq 0 ]]; then
+                    REMOTE_KEY=$(echo "$REGISTER_OUTPUT" | grep -oP 'tf_\w+' || true)
+                    if [[ -n "$REMOTE_KEY" ]]; then
+                        ok "Registered as $TF_USERNAME"
+                        REMOTE_OK=true
+                    else
+                        warn "Registered but could not extract API key"
+                    fi
+                else
+                    warn "Registration failed: $REGISTER_OUTPUT"
+                fi
             fi
-        else
-            if echo "$REGISTER_OUTPUT" | grep -qi "taken\|exists\|conflict\|409"; then
-                warn "Username '$TF_USERNAME' already taken. Try another."
-                continue
+            ;;
+        2)
+            read -rp "$(echo -e "${ORANGE}▸${RESET} Paste your remote API key (tf_...): ")" REMOTE_KEY
+            if [[ "$REMOTE_KEY" =~ ^tf_[a-zA-Z0-9]+$ ]]; then
+                info "Linking to existing account..."
+                LINK_OUTPUT=$("$INSTALL_DIR/$CLI_NAME" link "$REMOTE_KEY" --remote "$REMOTE_URL" 2>&1) && LINK_RC=0 || LINK_RC=$?
+                if [[ $LINK_RC -eq 0 ]]; then
+                    ok "Linked to existing account"
+                    REMOTE_OK=true
+                else
+                    warn "Link failed: $LINK_OUTPUT"
+                fi
             else
-                warn "Registration failed: $REGISTER_OUTPUT"
-                break
+                warn "Invalid key format (expected tf_...)"
             fi
-        fi
-    done
+            ;;
+        *)
+            info "Skipping remote setup"
+            echo -e "  ${DIM}Run later: $CLI_NAME register <username> --remote $REMOTE_URL${RESET}"
+            echo -e "  ${DIM}Or link:   $CLI_NAME link <api-key> --remote $REMOTE_URL${RESET}"
+            ;;
+    esac
 else
     warn "Remote unreachable — skipping. Run later:"
     echo -e "  ${DIM}$CLI_NAME register <username> --remote $REMOTE_URL${RESET}"
+    echo -e "  ${DIM}Or link:   $CLI_NAME link <api-key> --remote $REMOTE_URL${RESET}"
 fi
 
 if [[ "$REMOTE_OK" == "true" && -n "$API_KEY" ]]; then
-    cat > "$CLI_CONFIG" <<EOF
+    if [[ -z "$REMOTE_KEY" ]]; then
+        # Link command saves config itself, just add remote_url if missing
+        if ! grep -q "remote_url" "$CLI_CONFIG" 2>/dev/null; then
+            echo "remote_url = \"$REMOTE_URL\"" >> "$CLI_CONFIG"
+        fi
+    else
+        cat > "$CLI_CONFIG" <<EOF
 server_url = "http://127.0.0.1:6175"
 api_key = "$API_KEY"
 remote_url = "$REMOTE_URL"
 remote_key = "$REMOTE_KEY"
 EOF
+    fi
     ok "CLI config updated with remote"
 
     "$INSTALL_DIR/$CLI_NAME" profile --public 2>&1 || true
