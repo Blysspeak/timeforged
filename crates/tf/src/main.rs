@@ -77,6 +77,14 @@ enum Commands {
     },
     /// Sync local events to remote server
     Sync,
+    /// Link this machine to an existing remote account
+    Link {
+        /// Remote API key (from another machine's cli.toml)
+        remote_key: String,
+        /// Remote server URL (default: https://timeforged.blysspeak.space)
+        #[arg(long, default_value = "https://timeforged.blysspeak.space")]
+        remote: String,
+    },
     /// Register on a remote TimeForged server
     Register {
         /// Username
@@ -172,6 +180,9 @@ async fn main() {
             };
             let remote = TfClient::new(&remote_config);
             commands::sync::run(&client, &remote).await;
+        }
+        Commands::Link { remote_key, remote } => {
+            commands::link::run(&remote_key, &remote).await;
         }
         Commands::Register {
             username,

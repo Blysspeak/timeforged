@@ -1,4 +1,5 @@
 pub mod init;
+pub mod link;
 pub mod list;
 pub mod profile;
 pub mod register;
