@@ -23,5 +23,8 @@ image = { workspace = true }
 open = { workspace = true }
 dirs = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
