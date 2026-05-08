@@ -406,15 +406,10 @@ remote_key = "$RemoteKey"
     & "$InstallDir\tf.exe" profile --public 2>&1 | Out-Null
     & "$InstallDir\tf.exe" sync 2>&1 | Out-Null
 
-    # Auto-sync task
+    # Remove legacy scheduled task — daemon now handles auto-sync internally
     try {
-        $syncAction = New-ScheduledTaskAction -Execute "$InstallDir\tf.exe" -Argument "sync"
-        $syncTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 15)
-        Register-ScheduledTask -TaskName "TimeForged Sync" -Action $syncAction -Trigger $syncTrigger -Force | Out-Null
-        Write-Ok "Auto-sync task (every 15 min)"
-    } catch {
-        Write-Warn "Could not create sync task"
-    }
+        Unregister-ScheduledTask -TaskName "TimeForged Sync" -Confirm:$false -ErrorAction SilentlyContinue
+    } catch {}
 }
 
 # ══════════════════════════════════════
