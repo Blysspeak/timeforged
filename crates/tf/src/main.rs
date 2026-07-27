@@ -81,8 +81,8 @@ enum Commands {
     Link {
         /// Remote API key (from another machine's cli.toml)
         remote_key: String,
-        /// Remote server URL (default: https://timeforged.blysspeak.space)
-        #[arg(long, default_value = "https://timeforged.blysspeak.space")]
+        /// Remote server URL (default: https://timeforged.nexalix.io)
+        #[arg(long, default_value = "https://timeforged.nexalix.io")]
         remote: String,
     },
     /// Register on a remote TimeForged server

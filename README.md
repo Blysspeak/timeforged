@@ -25,7 +25,7 @@ The installer will:
 - Compile Rust binaries (`timeforged` daemon + `tf` CLI)
 - Install to `~/.local/bin/`
 - Set up a systemd user service
-- Register on the remote server (`timeforged.blysspeak.space`) for sync & public profile card
+- Register on the remote server (`timeforged.nexalix.io`) for sync & public profile card
 - Configure auto-sync (every 15 min via systemd timer)
 - Install Claude Code hooks (if detected)
 - Install the Waybar module (if Waybar is detected)
@@ -188,7 +188,7 @@ The installer handles this automatically. To set up manually:
 
 ```bash
 # Register on the remote server
-tf register <username> --remote https://timeforged.blysspeak.space
+tf register <username> --remote https://timeforged.nexalix.io
 
 # Enable public profile (makes your card visible)
 tf profile --public
@@ -203,7 +203,7 @@ Add this to your GitHub profile README:
 
 ```html
 <a href="https://github.com/Blysspeak/timeforged">
-  <img src="https://timeforged.blysspeak.space/api/v1/card/<username>?theme=dark" width="766" alt="TimeForged Activity" />
+  <img src="https://timeforged.nexalix.io/api/v1/card/<username>?theme=dark" width="766" alt="TimeForged Activity" />
 </a>
 ```
 
@@ -217,7 +217,7 @@ The card updates automatically as you sync. Available parameters:
 # ~/.config/timeforged/cli.toml
 server_url = "http://127.0.0.1:6175"
 api_key = "tf_..."
-remote_url = "https://timeforged.blysspeak.space"
+remote_url = "https://timeforged.nexalix.io"
 remote_key = "tf_..."
 ```
 
@@ -309,7 +309,7 @@ log_level = "info"
 ```toml
 server_url = "http://127.0.0.1:6175"
 api_key = "tf_..."
-remote_url = "https://timeforged.blysspeak.space"
+remote_url = "https://timeforged.nexalix.io"
 remote_key = "tf_..."
 ```
 

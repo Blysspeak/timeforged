@@ -430,7 +430,7 @@ fi
 # ══════════════════════════════════════
 header "Setting up remote sync..."
 
-DEFAULT_REMOTE="https://timeforged.blysspeak.space"
+DEFAULT_REMOTE="https://timeforged.nexalix.io"
 TF_USERNAME=""
 REMOTE_KEY=""
 REMOTE_URL=""

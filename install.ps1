@@ -321,7 +321,7 @@ Write-Ok "Tray app started"
 # ══════════════════════════════════════
 Write-Header "Setting up remote sync..."
 
-$DefaultRemote = "https://timeforged.blysspeak.space"
+$DefaultRemote = "https://timeforged.nexalix.io"
 $RemoteUrl = Read-Host "  ▸ Remote server [$DefaultRemote]"
 if ([string]::IsNullOrWhiteSpace($RemoteUrl)) { $RemoteUrl = $DefaultRemote }
 
