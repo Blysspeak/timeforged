@@ -1,0 +1,20 @@
+# The repository was written on Windows and every file landed in the index with
+# CRLF. Rust and TypeScript tolerate that, but a shell script does not: bash
+# reads the trailing \r as part of the command and dies on the first line, so
+# install.sh and every contrib/ script were unrunnable on Linux and macOS.
+#
+# Normalise the index to LF and keep it that way. Windows checkouts are
+# unaffected: git converts on checkout according to core.autocrlf there.
+* text=auto eol=lf
+
+# Scripts must be LF wherever they are checked out — a Windows clone that runs
+# them under Git Bash or WSL hits the same failure otherwise.
+*.sh text eol=lf
+
+# PowerShell is the one place CRLF is the native convention.
+*.ps1 text eol=crlf
+
+# Never touch binaries.
+*.png binary
+*.ico binary
+*.jpg binary
