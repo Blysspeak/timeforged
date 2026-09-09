@@ -17,6 +17,14 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), AppError> {
         .execute(pool)
         .await
         .ok(); // ignore if column already exists
+
+    // Нормализация времени и уникальный индекс. В отличие от предыдущих,
+    // ошибку здесь не глотаем: если миграция не прошла, индекса нет, и
+    // повторы снова начнут копиться молча.
+    sqlx::raw_sql(include_str!("migrations/003_normalize_timestamps.sql"))
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
     Ok(())
 }
 
@@ -219,13 +227,27 @@ fn parse_api_key_row(row: &sqlx::sqlite::SqliteRow) -> Result<ApiKey, AppError> 
 
 // --- Events ---
 
+/// Формат хранения меток времени: секундный UTC.
+///
+/// Он один на всю базу — иначе один и тот же момент попадает в неё разными
+/// строками (`+00:00`, `Z`, с наносекундами), и уникальный индекс перестаёт
+/// узнавать повтор.
+pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%dT%H:%M:%SZ";
+
+/// Вставляет событие, молча пропуская повтор.
+///
+/// `OR IGNORE` работает в паре с `idx_events_unique`: повторная отправка того
+/// же события при синхронизации не должна быть ошибкой — она просто ничего не
+/// добавляет. Для отброшенного повтора возвращается `0`: `last_insert_rowid()`
+/// после проигнорированной вставки хранит идентификатор от прошлой операции и
+/// выглядел бы как успешная запись.
 pub async fn insert_event(pool: &SqlitePool, event: &Event) -> Result<i64, AppError> {
     let result = sqlx::query(
-        "INSERT INTO events (user_id, timestamp, event_type, entity, project, language, branch, activity, machine, metadata)
+        "INSERT OR IGNORE INTO events (user_id, timestamp, event_type, entity, project, language, branch, activity, machine, metadata)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(event.user_id.to_string())
-    .bind(event.timestamp.to_rfc3339())
+    .bind(event.timestamp.format(TIMESTAMP_FORMAT).to_string())
     .bind(event.event_type.as_str())
     .bind(&event.entity)
     .bind(&event.project)
@@ -238,6 +260,9 @@ pub async fn insert_event(pool: &SqlitePool, event: &Event) -> Result<i64, AppEr
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
+    if result.rows_affected() == 0 {
+        return Ok(0);
+    }
     Ok(result.last_insert_rowid())
 }
 

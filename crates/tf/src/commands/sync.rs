@@ -86,6 +86,11 @@ async fn sync_events(
     sync_state: &mut SyncStateFile,
     direction: Direction,
 ) -> (usize, usize) {
+    // Пауза чуть длиннее минутного окна лимитера, чтобы к моменту повтора
+    // оно точно освободилось, а не подрезалось на границе.
+    const RATE_LIMIT_PAUSE: std::time::Duration = std::time::Duration::from_secs(65);
+    const RATE_LIMIT_RETRIES: usize = 30;
+
     let batch_size = 100;
     let page_size = 5_000;
     let mut grand_accepted = 0usize;
@@ -165,19 +170,41 @@ async fn sync_events(
 
             let batch = BatchEventRequest { events };
 
-            match target
-                .post::<BatchEventResponse, _>("/api/v1/events/batch", &batch)
-                .await
-            {
-                Ok(resp) => {
-                    page_accepted += resp.accepted;
-                    page_rejected += resp.rejected;
+            // Приёмник держит 120 записей в минуту с адреса, а пакет несёт
+            // сто событий — на полной выгрузке лимит срабатывает неизбежно.
+            // Это не отказ, а просьба подождать: прежде синхронизация на ней
+            // обрывалась и молча оставляла историю недосинхронизированной.
+            let mut attempt = 0;
+            loop {
+                match target
+                    .post::<BatchEventResponse, _>("/api/v1/events/batch", &batch)
+                    .await
+                {
+                    Ok(resp) => {
+                        page_accepted += resp.accepted;
+                        page_rejected += resp.rejected;
+                        break;
+                    }
+                    Err(e) if e.contains("429") && attempt < RATE_LIMIT_RETRIES => {
+                        attempt += 1;
+                        println!(
+                            "  {} лимит приёмника, жду {} с (попытка {}/{})",
+                            "⏸".yellow(),
+                            RATE_LIMIT_PAUSE.as_secs(),
+                            attempt,
+                            RATE_LIMIT_RETRIES,
+                        );
+                        tokio::time::sleep(RATE_LIMIT_PAUSE).await;
+                    }
+                    Err(e) => {
+                        eprintln!("{}: failed to push batch: {e}", "error".red());
+                        had_error = true;
+                        break;
+                    }
                 }
-                Err(e) => {
-                    eprintln!("{}: failed to push batch: {e}", "error".red());
-                    had_error = true;
-                    break;
-                }
+            }
+            if had_error {
+                break;
             }
         }
 

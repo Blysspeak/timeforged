@@ -1,5 +1,5 @@
 use axum::{Extension, Json, extract::{Query, State}, http::StatusCode, response::IntoResponse};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use timeforged_core::api::{
     BatchEventRequest, CreateEventRequest, ErrorResponse, ExportEventsQuery, ExportEventsResponse,
@@ -37,7 +37,14 @@ pub async fn list_events(
     Extension(AuthUser(user)): Extension<AuthUser>,
     Query(params): Query<ExportEventsQuery>,
 ) -> impl IntoResponse {
-    let since = params.since.unwrap_or_else(|| Utc::now() - chrono::Duration::days(30));
+    // Без `since` отдаём историю с самого начала, а не за последний месяц.
+    //
+    // Это ручка экспорта: ею пользуется синхронизация, и её первый запрос
+    // приходит без курсора. Подстановка «минус 30 дней» делала полную
+    // выгрузку невозможной — всё, что старше месяца, не уезжало никогда и
+    // при этом ошибки не возникало: клиент видел непустую страницу и считал
+    // работу сделанной. Окно в 30 дней уместно для отчётов, а не здесь.
+    let since = params.since.unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
     let limit = params.limit.clamp(1, 5000);
 
     match sqlite::list_events(&state.db, user.id, since, limit).await {
