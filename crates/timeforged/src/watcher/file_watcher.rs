@@ -62,9 +62,18 @@ impl GitBranchCache {
     }
 }
 
+/// Имя проекта — первый каталог внутри отслеживаемого корня.
+///
+/// Файл, лежащий прямо в корне, проектом не является: у него нет каталога, чьё
+/// имя можно взять, и раньше проектом становился он сам — случайный скриншот
+/// рядом с репозиториями попадал в отчёт наравне с ними. Такой файл
+/// пропускается: он не принадлежит ни одному проекту.
 fn resolve_project_name(watched_root: &Path, file_path: &Path) -> Option<String> {
     let relative = file_path.strip_prefix(watched_root).ok()?;
-    let first_component = relative.components().next()?;
+    let mut components = relative.components();
+    let first_component = components.next()?;
+    // Ни одного компонента после первого — значит первый и есть сам файл.
+    components.next()?;
     let name = first_component.as_os_str().to_str()?;
     if name.starts_with('.') {
         return None;
@@ -242,4 +251,47 @@ enum WatcherControlMsg {
 
 fn hostname() -> Option<String> {
     gethostname::gethostname().into_string().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_is_the_first_directory_under_the_root() {
+        let root = Path::new("/home/u/work");
+        assert_eq!(
+            resolve_project_name(root, Path::new("/home/u/work/boostix/src/main.rs")),
+            Some("boostix".into()),
+        );
+    }
+
+    #[test]
+    fn file_directly_in_the_root_is_not_a_project() {
+        // Скриншот, положенный рядом с репозиториями, раньше становился
+        // проектом и попадал в отчёт наравне с ними.
+        let root = Path::new("/home/u/work");
+        assert_eq!(
+            resolve_project_name(root, Path::new("/home/u/work/dashboard.png")),
+            None,
+        );
+    }
+
+    #[test]
+    fn dotted_directory_is_skipped() {
+        let root = Path::new("/home/u/work");
+        assert_eq!(
+            resolve_project_name(root, Path::new("/home/u/work/.cache/x/y.rs")),
+            None,
+        );
+    }
+
+    #[test]
+    fn path_outside_the_root_has_no_project() {
+        let root = Path::new("/home/u/work");
+        assert_eq!(
+            resolve_project_name(root, Path::new("/etc/passwd")),
+            None,
+        );
+    }
 }

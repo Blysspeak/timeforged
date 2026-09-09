@@ -90,11 +90,26 @@ pub fn is_ignored_path(path: &Path) -> bool {
         }
     }
 
-    // Ignore binary/lock files by extension
+    // Ignore binary/lock files by extension. Images, media and archives belong
+    // here too: a screenshot dropped next to the code is not time spent coding,
+    // and counting it inflates both the day's total and the language split.
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        let ext = ext.to_ascii_lowercase();
         if matches!(
-            ext,
+            ext.as_str(),
+            // build artefacts
             "lock" | "exe" | "dll" | "so" | "dylib" | "o" | "a" | "pyc" | "pyo" | "class" | "wasm"
+            // images
+            | "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "ico" | "icns" | "tiff" | "psd"
+            // media
+            | "mp4" | "mkv" | "webm" | "mov" | "avi" | "mp3" | "wav" | "flac" | "ogg" | "m4a"
+            // archives and images of disks
+            | "zip" | "tar" | "gz" | "bz2" | "xz" | "zst" | "7z" | "rar" | "iso"
+            // documents and fonts
+            | "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx"
+            | "ttf" | "otf" | "woff" | "woff2" | "eot"
+            // databases and dumps
+            | "db" | "sqlite" | "sqlite3" | "mdb" | "bin" | "dat"
         ) {
             return true;
         }
@@ -187,10 +202,24 @@ mod tests {
     }
 
     #[test]
+    fn ignored_media_and_documents() {
+        // Скриншот рядом с кодом — не работа над кодом.
+        assert!(is_ignored_path(&PathBuf::from("/project/dashboard.png")));
+        assert!(is_ignored_path(&PathBuf::from("/project/demo.mp4")));
+        assert!(is_ignored_path(&PathBuf::from("/project/spec.pdf")));
+        assert!(is_ignored_path(&PathBuf::from("/project/data.sqlite")));
+        assert!(is_ignored_path(&PathBuf::from("/project/font.woff2")));
+        // Регистр расширения роли не играет.
+        assert!(is_ignored_path(&PathBuf::from("/project/PHOTO.PNG")));
+    }
+
+    #[test]
     fn not_ignored_normal_files() {
         assert!(!is_ignored_path(&PathBuf::from("/project/src/main.rs")));
         assert!(!is_ignored_path(&PathBuf::from("/project/README.md")));
         assert!(!is_ignored_path(&PathBuf::from("/project/app.ts")));
         assert!(!is_ignored_path(&PathBuf::from("/home/user/work/foo/bar.py")));
+        // SVG правят руками как разметку, это работа — не медиафайл.
+        assert!(!is_ignored_path(&PathBuf::from("/project/icon.svg")));
     }
 }

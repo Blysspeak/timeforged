@@ -42,8 +42,32 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // Трекер пишет события непрерывно, а дашборд и CLI читают ту же базу.
+    // В журнале по умолчанию (`delete`) читатель и писатель блокируют друг
+    // друга, и любой отчёт во время записи падает с `database is locked`.
+    // WAL разводит их: читатели видят снимок и не ждут писателя.
+    //
+    // `busy_timeout` — страховка для оставшихся коротких пересечений (WAL
+    // всё ещё сериализует писателей): вместо мгновенной ошибки соединение
+    // ждёт освобождения. `synchronous = NORMAL` — обычная пара к WAL:
+    // fsync на checkpoint, а не на каждую транзакцию; при сбое питания
+    // теряется последняя транзакция, что для трекера времени приемлемо.
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::query("PRAGMA journal_mode = WAL")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("PRAGMA busy_timeout = 5000")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("PRAGMA synchronous = NORMAL")
+                    .execute(&mut *conn)
+                    .await?;
+                Ok(())
+            })
+        })
         .connect(&config.database_url)
         .await?;
 
