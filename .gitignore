@@ -5,3 +5,5 @@
 node_modules/
 dist/
 .claude/
+CLAUDE.md
+.ulika/
