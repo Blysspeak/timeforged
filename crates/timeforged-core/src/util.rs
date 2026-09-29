@@ -85,6 +85,13 @@ pub fn is_ignored_path(path: &Path) -> bool {
                 | "build"
                 | ".next"
                 | ".nuxt"
+                // same daemon-excreta class as the extensions below, but by directory: the
+                // ulika session journal/cmd-label logs append on every turn of every agent
+                // session in the owning project (xhub/.ulika/journal.jsonl alone produced 1919
+                // "work" events on 2026-09-13), playwright-mcp drops page snapshots there.
+                | ".ulika"
+                | ".codebase-memory"
+                | ".playwright-mcp"
         ) {
             return true;
         }
@@ -93,6 +100,13 @@ pub fn is_ignored_path(path: &Path) -> bool {
     // Ignore binary/lock files by extension. Images, media and archives belong
     // here too: a screenshot dropped next to the code is not time spent coding,
     // and counting it inflates both the day's total and the language split.
+
+    // Автогенерируемые дайджесты живых демонов: tg-mcp's bot перезаписывает свой
+    // digest.md (сводка чатов) после каждого синка сообщений -- 353 "рабочих"
+    // события за день, когда человек в проект не заходил.
+    if path.file_name().and_then(|n| n.to_str()) == Some("digest.md") {
+        return true;
+    }
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         let ext = ext.to_ascii_lowercase();
         if matches!(
@@ -110,6 +124,14 @@ pub fn is_ignored_path(path: &Path) -> bool {
             | "ttf" | "otf" | "woff" | "woff2" | "eot"
             // databases and dumps
             | "db" | "sqlite" | "sqlite3" | "mdb" | "bin" | "dat"
+            // daemon excreta: long-running services (tg-mcp's bot watcher, sync timers, the
+            // timeforged daemon itself) append to their logs/journals/sqlite sidecars all day
+            // regardless of whether anyone is coding, and each append counted as "work" and
+            // inflated the owning project's hours (verified live 2026-09-13: tg-mcp showed
+            // 8.5h on a day it was never opened by a human -- every hit was messages.db-wal,
+            // inbox/*.jsonl or *.log). .db-wal/.db-shm land here because extension() reads the
+            // text past the LAST dot, so "messages.db-wal" is extension "db-wal", not "db".
+            | "log" | "jsonl" | "db-wal" | "db-shm" | "sqlite-wal" | "sqlite-shm"
         ) {
             return true;
         }
@@ -188,6 +210,8 @@ mod tests {
         assert!(is_ignored_path(&PathBuf::from("/project/__pycache__/mod.pyc")));
         assert!(is_ignored_path(&PathBuf::from("/project/.venv/bin/python")));
         assert!(is_ignored_path(&PathBuf::from("/project/.idea/workspace.xml")));
+        assert!(is_ignored_path(&PathBuf::from("/project/xhub/.ulika/journal.jsonl")));
+        assert!(is_ignored_path(&PathBuf::from("/project/xhub/.codebase-memory/artifact.json")));
         assert!(is_ignored_path(&PathBuf::from("/project/dist/index.js")));
     }
 
@@ -199,6 +223,22 @@ mod tests {
         assert!(is_ignored_path(&PathBuf::from("/project/lib.dll")));
         assert!(is_ignored_path(&PathBuf::from("/project/module.wasm")));
         assert!(is_ignored_path(&PathBuf::from("/project/mod.pyc")));
+    }
+
+    #[test]
+    fn ignored_daemon_excreta() {
+        // Дописывающиеся логи/журналы/sqlite-сайдкары живых демонов -- не работа
+        // (tg-mcp's bot watcher: см. комментарий у списка расширений выше).
+        assert!(is_ignored_path(&PathBuf::from("/project/tg-mcp/bot-daemon.log")));
+        assert!(is_ignored_path(&PathBuf::from("/project/tg-mcp/inbox/xhub.jsonl")));
+        assert!(is_ignored_path(&PathBuf::from("/project/tg-mcp/messages.db-wal")));
+        assert!(is_ignored_path(&PathBuf::from("/project/tg-mcp/messages.db-shm")));
+        assert!(is_ignored_path(&PathBuf::from("/project/cache.sqlite-wal")));
+        assert!(is_ignored_path(&PathBuf::from("/project/tg-mcp/digest.md")));
+        assert!(is_ignored_path(&PathBuf::from("/project/xhub/.playwright-mcp/page-1.yml")));
+        // Контроль: обычный markdown/код рядом -- не задет.
+        assert!(!is_ignored_path(&PathBuf::from("/project/README.md")));
+        assert!(!is_ignored_path(&PathBuf::from("/project/src/main.rs")));
     }
 
     #[test]
