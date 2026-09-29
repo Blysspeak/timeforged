@@ -11,6 +11,7 @@ timeforged-core = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

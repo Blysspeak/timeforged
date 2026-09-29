@@ -1,11 +1,12 @@
 use chrono::{DateTime, Utc};
+use futures_util::StreamExt;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
+use super::summary::SummaryAccumulator;
 use timeforged_core::error::AppError;
 use timeforged_core::models::{
-    ApiKey, CategorySummary, DaySummary, Event, HourlyActivity, ReportRequest, Session, Summary,
-    User,
+    ApiKey, Event, HourlyActivity, ReportRequest, Session, Summary, User,
 };
 
 pub async fn init_db(pool: &SqlitePool) -> Result<(), AppError> {
@@ -341,200 +342,41 @@ pub async fn get_summary(
     let from_str = from.to_rfc3339();
     let to_str = to.to_rfc3339();
 
-    // Total time via session gaps
-    let total = compute_total_seconds(pool, &user_id_str, &from_str, &to_str, idle_timeout, req.project.as_deref()).await?;
-
-    // By project
-    let projects = query_category_summary(
-        pool, &user_id_str, &from_str, &to_str, "project", req.project.as_deref(), idle_timeout,
-    ).await?;
-
-    // By language
-    let languages = query_category_summary(
-        pool, &user_id_str, &from_str, &to_str, "language", req.project.as_deref(), idle_timeout,
-    ).await?;
-
-    // By day
-    let days = query_day_summary(pool, &user_id_str, &from_str, &to_str, idle_timeout, req.project.as_deref()).await?;
-
-    Ok(Summary {
-        total_seconds: total,
-        from,
-        to,
-        projects,
-        languages,
-        days,
-    })
-}
-
-async fn compute_total_seconds(
-    pool: &SqlitePool,
-    user_id: &str,
-    from: &str,
-    to: &str,
-    idle_timeout: u64,
-    project: Option<&str>,
-) -> Result<f64, AppError> {
-    // Use window function to compute gaps between consecutive events.
-    // If gap < idle_timeout, it's active time. Otherwise, count a flat heartbeat (e.g. 2 min).
+    // One streamed scan instead of four window-function queries, each of which re-sorted
+    // the whole range (6.5s on 182k events). Global timestamp order gives every partition
+    // the same relative order LAG consumed, so the accumulator reproduces the old sums;
+    // memory stays O(partitions), never O(rows) -- the daemon runs under a 50MB cap.
     let mut query = String::from(
-        "WITH ordered AS (
-            SELECT timestamp,
-                   LAG(timestamp) OVER (ORDER BY timestamp) as prev_ts
-            FROM events
-            WHERE user_id = ? AND timestamp >= ? AND timestamp <= ?",
+        "SELECT timestamp, project, language FROM events
+         WHERE user_id = ? AND timestamp >= ? AND timestamp <= ?",
     );
-    if project.is_some() {
+    if req.project.is_some() {
         query.push_str(" AND project = ?");
     }
-    query.push_str(
-        ")
-        SELECT CAST(COALESCE(SUM(
-            CASE
-                WHEN prev_ts IS NULL THEN 0.0
-                WHEN (julianday(timestamp) - julianday(prev_ts)) * 86400 < ?
-                THEN (julianday(timestamp) - julianday(prev_ts)) * 86400
-                ELSE 0.0
-            END
-        ), 0.0) AS REAL) as total
-        FROM ordered",
-    );
+    query.push_str(" ORDER BY timestamp");
 
     let mut q = sqlx::query(&query)
-        .bind(user_id)
-        .bind(from)
-        .bind(to);
-    if let Some(p) = project {
+        .bind(&user_id_str)
+        .bind(&from_str)
+        .bind(&to_str);
+    if let Some(p) = req.project.as_deref() {
         q = q.bind(p);
     }
-    q = q.bind(idle_timeout as f64);
 
-    let row = q.fetch_one(pool).await.map_err(|e| AppError::Database(e.to_string()))?;
-    Ok(row.get::<f64, _>("total"))
-}
-
-async fn query_category_summary(
-    pool: &SqlitePool,
-    user_id: &str,
-    from: &str,
-    to: &str,
-    column: &str,
-    project_filter: Option<&str>,
-    idle_timeout: u64,
-) -> Result<Vec<CategorySummary>, AppError> {
-    // Simpler approach: count events per category, weight by avg gap
-    let mut query = format!(
-        "WITH ordered AS (
-            SELECT {col}, timestamp,
-                   LAG(timestamp) OVER (PARTITION BY {col} ORDER BY timestamp) as prev_ts
-            FROM events
-            WHERE user_id = ? AND timestamp >= ? AND timestamp <= ? AND {col} IS NOT NULL",
-        col = column,
-    );
-    if project_filter.is_some() && column != "project" {
-        query.push_str(" AND project = ?");
+    let mut acc = SummaryAccumulator::new(idle_timeout);
+    let mut rows = q.fetch(pool);
+    while let Some(row) = rows.next().await {
+        let row = row.map_err(|e| AppError::Database(e.to_string()))?;
+        let ts_str: String = row.get("timestamp");
+        let ts = DateTime::parse_from_rfc3339(&ts_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let project: Option<String> = row.get("project");
+        let language: Option<String> = row.get("language");
+        acc.push(ts, project.as_deref(), language.as_deref());
     }
-    query.push_str(&format!(
-        ")
-        SELECT {col} as name,
-               CAST(COALESCE(SUM(
-                   CASE
-                       WHEN prev_ts IS NULL THEN 0.0
-                       WHEN (julianday(timestamp) - julianday(prev_ts)) * 86400 < ?
-                       THEN (julianday(timestamp) - julianday(prev_ts)) * 86400
-                       ELSE 0.0
-                   END
-               ), 0.0) AS REAL) as total
-        FROM ordered
-        GROUP BY {col}
-        ORDER BY total DESC",
-        col = column,
-    ));
 
-    let mut q = sqlx::query(&query)
-        .bind(user_id)
-        .bind(from)
-        .bind(to);
-    if let Some(p) = project_filter {
-        if column != "project" {
-            q = q.bind(p);
-        }
-    }
-    q = q.bind(idle_timeout as f64);
-
-    let rows = q.fetch_all(pool).await.map_err(|e| AppError::Database(e.to_string()))?;
-
-    let grand_total: f64 = rows.iter().map(|r| r.get::<f64, _>("total")).sum();
-
-    Ok(rows
-        .iter()
-        .map(|r| {
-            let total: f64 = r.get("total");
-            CategorySummary {
-                name: r.get("name"),
-                total_seconds: total,
-                percent: if grand_total > 0.0 { total / grand_total * 100.0 } else { 0.0 },
-            }
-        })
-        .collect())
-}
-
-async fn query_day_summary(
-    pool: &SqlitePool,
-    user_id: &str,
-    from: &str,
-    to: &str,
-    idle_timeout: u64,
-    project: Option<&str>,
-) -> Result<Vec<DaySummary>, AppError> {
-    let mut query = String::from(
-        "WITH ordered AS (
-            SELECT date(timestamp) as day, timestamp,
-                   LAG(timestamp) OVER (PARTITION BY date(timestamp) ORDER BY timestamp) as prev_ts
-            FROM events
-            WHERE user_id = ? AND timestamp >= ? AND timestamp <= ?",
-    );
-    if project.is_some() {
-        query.push_str(" AND project = ?");
-    }
-    query.push_str(
-        ")
-        SELECT day,
-               CAST(COALESCE(SUM(
-                   CASE
-                       WHEN prev_ts IS NULL THEN 0.0
-                       WHEN (julianday(timestamp) - julianday(prev_ts)) * 86400 < ?
-                       THEN (julianday(timestamp) - julianday(prev_ts)) * 86400
-                       ELSE 0.0
-                   END
-               ), 0.0) AS REAL) as total
-        FROM ordered
-        GROUP BY day
-        ORDER BY day",
-    );
-
-    let mut q = sqlx::query(&query)
-        .bind(user_id)
-        .bind(from)
-        .bind(to);
-    if let Some(p) = project {
-        q = q.bind(p);
-    }
-    q = q.bind(idle_timeout as f64);
-
-    let rows = q.fetch_all(pool).await.map_err(|e| AppError::Database(e.to_string()))?;
-
-    rows.iter()
-        .map(|r| {
-            let day_str: String = r.get("day");
-            let date = chrono::NaiveDate::parse_from_str(&day_str, "%Y-%m-%d")
-                .map_err(|e| AppError::Database(e.to_string()))?;
-            Ok(DaySummary {
-                date,
-                total_seconds: r.get("total"),
-            })
-        })
-        .collect()
+    Ok(acc.finish(from, to))
 }
 
 pub async fn get_sessions(
@@ -546,10 +388,15 @@ pub async fn get_sessions(
     let from = req.from.unwrap_or_else(|| Utc::now() - chrono::Duration::days(7));
     let to = req.to.unwrap_or_else(Utc::now);
 
+    // Gaps and the running session counter are both partitioned by project: without this,
+    // events from unrelated projects that happen to land within idle_timeout of each other
+    // bridge into a single fabricated cross-project "session" (see
+    // timeforged-inflated-hours-2026-09-13 -- the reported 16h40m/9631-event session was
+    // actually every project's events that day, merged and mislabeled).
     let mut query = String::from(
         "WITH ordered AS (
             SELECT timestamp, project,
-                   LAG(timestamp) OVER (ORDER BY timestamp) as prev_ts
+                   LAG(timestamp) OVER (PARTITION BY project ORDER BY timestamp) as prev_ts
             FROM events
             WHERE user_id = ? AND timestamp >= ? AND timestamp <= ?",
     );
@@ -566,7 +413,7 @@ pub async fn get_sessions(
         ),
         sessions AS (
             SELECT timestamp, project,
-                   SUM(new_session) OVER (ORDER BY timestamp) as session_id
+                   SUM(new_session) OVER (PARTITION BY project ORDER BY timestamp) as session_id
             FROM gaps
         )
         SELECT MIN(timestamp) as start_ts,
@@ -575,7 +422,7 @@ pub async fn get_sessions(
                project,
                COUNT(*) as event_count
         FROM sessions
-        GROUP BY session_id
+        GROUP BY project, session_id
         ORDER BY start_ts",
     );
 
@@ -618,11 +465,13 @@ pub async fn get_hourly_activity(
     let from = req.from.unwrap_or_else(|| Utc::now() - chrono::Duration::days(7));
     let to = req.to.unwrap_or_else(Utc::now);
 
+    // Partition by project for the same reason as compute_total_seconds/get_sessions above:
+    // an unpartitioned LAG lets unrelated projects bridge each other's idle gaps.
     let mut query = String::from(
         "WITH ordered AS (
             SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour,
                    timestamp,
-                   LAG(timestamp) OVER (ORDER BY timestamp) as prev_ts
+                   LAG(timestamp) OVER (PARTITION BY project ORDER BY timestamp) as prev_ts
             FROM events
             WHERE user_id = ? AND timestamp >= ? AND timestamp <= ?",
     );
