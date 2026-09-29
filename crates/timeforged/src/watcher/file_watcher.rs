@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use notify::event::CreateKind;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher, EventKind};
 use sqlx::SqlitePool;
 use tokio::sync::{mpsc, Mutex};
@@ -62,6 +63,52 @@ impl GitBranchCache {
     }
 }
 
+/// Обходит `root` и его вложенные каталоги, отдавая список того, что стоит
+/// watch'ить НЕрекурсивно по отдельности.
+///
+/// Не идём по симлинкам и не спускаемся в то, что `is_ignored_path` и так
+/// вырезает из событий (node_modules, .git, target, venv, dist, build,
+/// __pycache__ и т.п.) — теми же правилами, что фильтруют события, теперь
+/// фильтруется и то, что вообще становится вотчем.
+///
+/// Раньше это отдавалось `notify` целиком через `RecursiveMode::Recursive`,
+/// а внутри него — `WalkDir::follow_links(true)`. В этом воркспейсе под
+/// `deepseek-harness/.../node_modules` есть симлинк-цикл (pnpm кладёт
+/// пакеты друг в друга через симлинки), и такой обход не заканчивается:
+/// единственный event-loop-поток `notify` вешается навечно внутри
+/// `add_watch()`, а его собственные `watches`/`paths` (`HashMap<PathBuf, _>`)
+/// растут без остановки на всё более длинных путях каждого витка цикла —
+/// это и был весь OOM (см. заметку в памяти по инциденту 2026-09-13).
+fn collect_watch_dirs(root: &Path) -> Vec<PathBuf> {
+    let mut result = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                tracing::warn!("failed to read {}: {e}", dir.display());
+                continue;
+            }
+        };
+        for entry in entries.flatten() {
+            let file_type = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+            if file_type.is_symlink() || !file_type.is_dir() {
+                continue;
+            }
+            let path = entry.path();
+            if is_ignored_path(&path) {
+                continue;
+            }
+            stack.push(path);
+        }
+        result.push(dir);
+    }
+    result
+}
+
 /// Имя проекта — первый каталог внутри отслеживаемого корня.
 ///
 /// Файл, лежащий прямо в корне, проектом не является: у него нет каталога, чьё
@@ -103,17 +150,42 @@ pub async fn run(
     // Spawn blocking watcher thread
     let event_tx_clone = event_tx.clone();
     let dirs_for_thread = initial_dirs;
+    let watch_requests_tx = watcher_control_tx.clone();
     let rt_handle = tokio::runtime::Handle::current();
     std::thread::spawn(move || {
         let rt = rt_handle;
         let event_tx = event_tx_clone;
         let initial_dirs = dirs_for_thread;
+        // Каталоги, на которые сейчас реально стоит inotify-вотч (по одному
+        // на каждый, все NonRecursive — см. collect_watch_dirs). Нужен,
+        // чтобы на Unwatch(root) снять все вложенные вотчи: notify сам не
+        // каскадирует unwatch для NonRecursive-регистраций.
+        let mut registered: HashSet<PathBuf> = HashSet::new();
 
         let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
             if let Ok(event) = res {
+                // Новый (не игнорируемый) каталог — досконально его тоже
+                // нужно повотчить: сами мы регистрируем NonRecursive,
+                // поэтому notify не подхватит его вложенные подкаталоги
+                // автоматически, как делал бы в RecursiveMode::Recursive.
+                if matches!(event.kind, EventKind::Create(CreateKind::Folder)) {
+                    for path in &event.paths {
+                        if !is_ignored_path(path) {
+                            let _ = watch_requests_tx.try_send(WatcherControlMsg::Watch(path.clone()));
+                        }
+                    }
+                }
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     for path in event.paths {
-                        let _ = event_tx.try_send(path);
+                        // Каталоги сюда не ходят: create-на-папке уже обработан веткой
+                        // watch_requests выше, а modify-на-папке (chmod, rename родителя)
+                        // не является работой над кодом -- раньше такие события долетали
+                        // до event_tx с entity = сам каталог проекта и накручивали ему
+                        // часы (520 событий на "tg-mcp" за один день 2026-09-13, ноль
+                        // из них -- прикосновение человека).
+                        if !path.is_dir() {
+                            let _ = event_tx.try_send(path);
+                        }
                     }
                 }
             }
@@ -121,14 +193,21 @@ pub async fn run(
 
         watcher.configure(Config::default()).ok();
 
-        // Watch initial dirs
+        // Watch initial dirs — по одному не-игнорируемому подкаталогу за
+        // раз (collect_watch_dirs), не отдавая обход целиком notify.
         for dir in &initial_dirs {
             if dir.exists() {
-                if let Err(e) = watcher.watch(dir, RecursiveMode::Recursive) {
-                    tracing::warn!("failed to watch {}: {e}", dir.display());
-                } else {
-                    tracing::info!("watching {}", dir.display());
+                let mut watched = 0usize;
+                for sub in collect_watch_dirs(dir) {
+                    match watcher.watch(&sub, RecursiveMode::NonRecursive) {
+                        Ok(()) => {
+                            registered.insert(sub);
+                            watched += 1;
+                        }
+                        Err(e) => tracing::warn!("failed to watch {}: {e}", sub.display()),
+                    }
                 }
+                tracing::info!("watching {} ({watched} subdirectories)", dir.display());
             }
         }
 
@@ -137,15 +216,34 @@ pub async fn run(
             match rt.block_on(watcher_control_rx.recv()) {
                 Some(WatcherControlMsg::Watch(dir)) => {
                     if dir.exists() {
-                        if let Err(e) = watcher.watch(&dir, RecursiveMode::Recursive) {
-                            tracing::warn!("failed to watch {}: {e}", dir.display());
-                        } else {
-                            tracing::info!("watching {}", dir.display());
+                        let mut watched = 0usize;
+                        for sub in collect_watch_dirs(&dir) {
+                            if registered.contains(&sub) {
+                                continue;
+                            }
+                            match watcher.watch(&sub, RecursiveMode::NonRecursive) {
+                                Ok(()) => {
+                                    registered.insert(sub);
+                                    watched += 1;
+                                }
+                                Err(e) => tracing::warn!("failed to watch {}: {e}", sub.display()),
+                            }
+                        }
+                        if watched > 0 {
+                            tracing::info!("watching {} ({watched} new subdirectories)", dir.display());
                         }
                     }
                 }
                 Some(WatcherControlMsg::Unwatch(dir)) => {
-                    let _ = watcher.unwatch(&dir);
+                    let nested: Vec<PathBuf> = registered
+                        .iter()
+                        .filter(|p| p.starts_with(&dir))
+                        .cloned()
+                        .collect();
+                    for sub in nested {
+                        let _ = watcher.unwatch(&sub);
+                        registered.remove(&sub);
+                    }
                     tracing::info!("unwatched {}", dir.display());
                 }
                 None => break,
