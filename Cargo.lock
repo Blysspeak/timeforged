@@ -3208,6 +3208,7 @@ dependencies = [
  "axum",
  "chrono",
  "dirs",
+ "futures-util",
  "gethostname",
  "globset",
  "mime_guess",
